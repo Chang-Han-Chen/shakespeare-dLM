@@ -188,6 +188,52 @@ class Model(nn.Module):
 
 
 # ------------------------------------------------------------------
+# Training interface
+# ------------------------------------------------------------------
+
+def get_batch(split, cfg):
+    """Masked batch + visible-token corruption (corrupt_prob)."""
+    data_split = cfg["train_data"] if split == "train" else cfg["val_data"]
+    B, L = cfg["batch_size"], cfg["block_size"]
+    idx = torch.randint(len(data_split) - L, (B,))
+    x0 = torch.stack([data_split[i : i + L] for i in idx])
+
+    t = torch.randint(1, cfg["T"] + 1, (B,))
+    a_t = cfg["survival_prob_tensor"](t).unsqueeze(1)
+
+    token_mask = torch.rand(B, L) > a_t
+    xt = x0.clone()
+    xt[token_mask] = cfg["mask_token_id"]
+
+    # Corrupt a fraction of *visible* positions with wrong tokens
+    corrupt_prob = cfg.get("corrupt_prob", 0.15)
+    visible = ~token_mask
+    edit_mask = visible & (torch.rand(B, L) < corrupt_prob)
+    if edit_mask.any():
+        rand_offset = torch.randint(1, cfg["vocab_size"], x0.shape)
+        wrong_tokens = (x0 + rand_offset) % cfg["vocab_size"]
+        xt[edit_mask] = wrong_tokens[edit_mask]
+
+    supervise_mask = token_mask | edit_mask
+
+    dev = cfg["device"]
+    return xt.to(dev), x0.to(dev), supervise_mask.to(dev)
+
+
+def compute_loss(model, batch, cfg):
+    """CE on masked + corrupted positions."""
+    xt, x0, supervise_mask = batch
+    _, loss = model(xt, targets=x0, supervise_mask=supervise_mask)
+    return loss
+
+
+def compute_eval_loss(model, xt, x0, mask):
+    """Standard denoising CE (uses supervise_mask kwarg)."""
+    _, loss = model(xt, targets=x0, supervise_mask=mask)
+    return loss
+
+
+# ------------------------------------------------------------------
 # Reverse Diffusion Sampling (rewrite all + confidence remasking)
 # ------------------------------------------------------------------
 

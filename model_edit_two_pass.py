@@ -202,6 +202,60 @@ class Model(nn.Module):
 
 
 # ------------------------------------------------------------------
+# Training interface
+# ------------------------------------------------------------------
+
+def get_batch(split, cfg):
+    """Standard masked batch (same as remasked / MDLM)."""
+    data_split = cfg["train_data"] if split == "train" else cfg["val_data"]
+    B, L = cfg["batch_size"], cfg["block_size"]
+    idx = torch.randint(len(data_split) - L, (B,))
+    x0 = torch.stack([data_split[i : i + L] for i in idx])
+
+    t = torch.randint(1, cfg["T"] + 1, (B,))
+    a_t = cfg["survival_prob_tensor"](t).unsqueeze(1)
+
+    token_mask = torch.rand(B, L) > a_t
+    xt = x0.clone()
+    xt[token_mask] = cfg["mask_token_id"]
+
+    dev = cfg["device"]
+    return xt.to(dev), x0.to(dev), token_mask.to(dev)
+
+
+def compute_loss(model, batch, cfg):
+    """Two-pass loss: denoising CE + correction CE on model's own draft."""
+    xt, x0, mask = batch
+    lambda_corr = cfg.get("lambda_corr", 1.0)
+
+    # Pass 1: denoising
+    logits_1, _ = model(xt)
+    loss_denoise = masked_ce_loss(logits_1, x0, mask)
+
+    # Build stop-gradient draft
+    with torch.no_grad():
+        sampled = sample_tokens_from_logits(logits_1.float())
+        draft = xt.clone()
+        draft[mask] = sampled[mask]
+        corr_mask = draft != x0
+
+    # Pass 2: correction on draft
+    if corr_mask.any():
+        logits_2, _ = model(draft)
+        loss_corr = masked_ce_loss(logits_2, x0, corr_mask)
+    else:
+        loss_corr = torch.zeros((), device=xt.device)
+
+    return loss_denoise + lambda_corr * loss_corr
+
+
+def compute_eval_loss(model, xt, x0, mask):
+    """Standard denoising CE (uses supervise_mask kwarg)."""
+    _, loss = model(xt, targets=x0, supervise_mask=mask)
+    return loss
+
+
+# ------------------------------------------------------------------
 # Reverse Diffusion Sampling
 # Outer loop: MDLM progressive unmasking (carry over revealed tokens)
 # Occasional inner loop: corrective sweep over visible non-prompt tokens

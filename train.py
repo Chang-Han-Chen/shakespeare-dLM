@@ -4,14 +4,13 @@ import time
 import math
 import pickle
 import argparse
+import importlib
 from contextlib import nullcontext
 
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast
-
-from model_remasked import Model, generate_from
 
 
 # ---------------------------------------------------------------------
@@ -30,6 +29,13 @@ def str2bool(v):
 
 
 parser = argparse.ArgumentParser()
+
+# Model selection
+parser.add_argument(
+    "--model", type=str, default="remasked",
+    choices=["remasked", "mdlm", "edit_one_pass", "edit_two_pass"],
+    help="Which model variant to train",
+)
 
 # Training
 parser.add_argument("--batch_size", type=int, default=256)
@@ -61,6 +67,10 @@ parser.add_argument(
     default="linear",
     choices=["linear", "cosine"],
 )
+parser.add_argument("--corrupt_prob", type=float, default=0.15,
+                    help="Fraction of visible tokens corrupted (edit_one_pass)")
+parser.add_argument("--lambda_corr", type=float, default=1.0,
+                    help="Weight of correction loss (edit_two_pass)")
 
 # Eval
 parser.add_argument("--eval_t_frac", type=float, default=0.6,
@@ -107,6 +117,20 @@ eval_t_frac = args.eval_t_frac
 gpt2_eval_samples = args.gpt2_eval_samples
 prompt_len = args.prompt_len
 num_final_samples = args.num_final_samples
+
+# --- Dynamic model import ---
+MODEL_MODULE_MAP = {
+    "remasked": "model_remasked",
+    "mdlm": "model_MDLM",
+    "edit_one_pass": "model_edit_one_pass",
+    "edit_two_pass": "model_edit_two_pass",
+}
+model_module = importlib.import_module(MODEL_MODULE_MAP[args.model])
+Model = model_module.Model
+generate_from = model_module.generate_from
+model_get_batch = model_module.get_batch
+model_compute_loss = model_module.compute_loss
+model_compute_eval_loss = model_module.compute_eval_loss
 
 device = (
     "cuda"
@@ -240,25 +264,6 @@ def survival_prob_scalar(t_step: int) -> float:
 
 
 # ---------------------------------------------------------------------
-# Batch Loader
-# ---------------------------------------------------------------------
-
-def get_batch(split):
-    data_split = train_data if split == "train" else val_data
-    idx = torch.randint(len(data_split) - block_size, (batch_size,))
-    x0 = torch.stack([data_split[i : i + block_size] for i in idx])
-
-    t = torch.randint(1, T + 1, (batch_size,))
-    a_t = survival_prob_tensor(t).unsqueeze(1)  # (B, 1)
-
-    token_mask = torch.rand(batch_size, block_size) > a_t  # True means masked
-    xt = x0.clone()
-    xt[token_mask] = mask_token_id
-
-    return xt.to(device), x0.to(device), token_mask.to(device)
-
-
-# ---------------------------------------------------------------------
 # Eval: fixed-t batch for validation
 # ---------------------------------------------------------------------
 
@@ -292,7 +297,7 @@ def estimate_loss(run_model):
         for k in range(eval_iters):
             xb, yb, mb = get_eval_batch(split)
             with autocast_ctx():
-                _, loss = run_model(xb, targets=yb, mask=mb)
+                loss = model_compute_eval_loss(run_model, xb, yb, mb)
             losses[k] = loss.item()
         out[split] = losses.mean().item()
     return out
@@ -339,24 +344,37 @@ def estimate_gpt2_ce(diffusion_model, gpt2_model, gpt2_tokenizer,
             decode=decode,
         )
 
-        # Tokenize with GPT2
-        prefix_text = sample_text[:prompt_len]
-        full_ids = gpt2_tokenizer.encode(sample_text)
-        prefix_ids = gpt2_tokenizer.encode(prefix_text)
-        n_prefix = len(prefix_ids)
+        # Tokenize full text with offset mappings so we can find the
+        # exact BPE-token boundary between prefix and continuation.
+        # BPE is NOT additive: BPE(a+b) != BPE(a) || BPE(b), so we
+        # cannot just tokenize the prefix separately to find the split.
+        enc = gpt2_tokenizer(
+            sample_text, return_offsets_mapping=True, return_tensors="pt",
+        )
+        full_ids = enc["input_ids"][0]           # (L,)
+        offsets = enc["offset_mapping"][0]        # (L, 2) — char spans
 
-        if len(full_ids) <= n_prefix + 1:
-            continue  # too few generated tokens to score
+        # First token whose char span starts strictly at or after the
+        # prompt boundary.  Tokens straddling the boundary are excluded.
+        cont_start = None
+        for idx_tok, (char_start, char_end) in enumerate(offsets.tolist()):
+            if char_start >= prompt_len:
+                cont_start = idx_tok
+                break
+        if cont_start is None or cont_start >= len(full_ids):
+            continue  # entire text falls within / straddles the prefix
 
-        input_ids = torch.tensor([full_ids], device=device)
+        if len(full_ids) <= cont_start + 1:
+            continue  # too few continuation tokens to score
+
+        input_ids = full_ids.unsqueeze(0).to(device)
         logits = gpt2_model(input_ids).logits  # (1, L, V_gpt2)
 
-        # CE for next-token prediction, scored only on generated portion.
-        # logits[0, i] predicts token i+1.
-        # Generated tokens start at index n_prefix, so we use
-        # logits from n_prefix-1 onward to predict them.
-        start = max(n_prefix - 1, 0)
-        target_ids = input_ids[0, start + 1:]
+        # CE for next-token prediction, scored only on continuation.
+        # logits[0, i] predicts token i+1, so to score tokens from
+        # cont_start onward we use logits[cont_start-1 : -1].
+        start = max(cont_start - 1, 0)
+        target_ids = full_ids[start + 1:].to(device)
         pred_logits = logits[0, start : start + len(target_ids)]
 
         if len(target_ids) == 0:
@@ -391,6 +409,27 @@ def generate(model, prompt_len=16):
         survival_prob_scalar=survival_prob_scalar,
         decode=decode,
     )
+
+
+# ---------------------------------------------------------------------
+# Model config dict (passed to model's get_batch / compute_loss)
+# ---------------------------------------------------------------------
+
+cfg = {
+    "train_data": train_data,
+    "val_data": val_data,
+    "batch_size": batch_size,
+    "block_size": block_size,
+    "T": T,
+    "mask_token_id": mask_token_id,
+    "vocab_size": vocab_size,
+    "device": device,
+    "survival_prob_tensor": survival_prob_tensor,
+    # edit_one_pass specific
+    "corrupt_prob": args.corrupt_prob,
+    # edit_two_pass specific
+    "lambda_corr": args.lambda_corr,
+}
 
 
 # ---------------------------------------------------------------------
@@ -466,10 +505,10 @@ if __name__ == "__main__":
             print(generate(model, prompt_len=prompt_len))
             model.train()
 
-        xb, yb, mb = get_batch("train")
+        batch = model_get_batch("train", cfg)
 
         with autocast_ctx():
-            logits, loss = compiled_model(xb, targets=yb, mask=mb)
+            loss = model_compute_loss(compiled_model, batch, cfg)
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()

@@ -1,4 +1,4 @@
-# shakespeare-dllm
+# shakespeare-dLM
 
 This repo explores scaling laws and training dynamics for tiny diffusion language models on Shakespeare-like toy data.
 
