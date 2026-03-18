@@ -129,6 +129,93 @@ def test_train_cli_accepts_save_interval_zero(tmp_path):
     assert "ZeroDivisionError" not in result.stderr
 
 
+def test_train_cli_can_warmstart_block_from_ar_checkpoint(tmp_path):
+    ar_ckpt = tmp_path / "ar_ckpt.pt"
+    ar_loss = tmp_path / "ar_loss.pkl"
+    bd_ckpt = tmp_path / "bd_ckpt.pt"
+    bd_loss = tmp_path / "bd_loss.pkl"
+
+    ar_result = run_repo_cmd(
+        "train.py",
+        "--model",
+        "ar",
+        "--max_iters",
+        "1",
+        "--eval_interval",
+        "0",
+        "--batch_size",
+        "2",
+        "--block_size",
+        "16",
+        "--n_embd",
+        "16",
+        "--n_head",
+        "4",
+        "--n_layer",
+        "1",
+        "--save_interval",
+        "0",
+        "--num_final_samples",
+        "0",
+        "--sample_interval",
+        "0",
+        "--gpt2_eval_interval",
+        "0",
+        "--use_compile",
+        "false",
+        "--checkpoint_path",
+        str(ar_ckpt),
+        "--loss_log_path",
+        str(ar_loss),
+    )
+
+    assert ar_result.returncode == 0, ar_result.stderr
+    assert ar_ckpt.exists()
+
+    bd_result = run_repo_cmd(
+        "train.py",
+        "--model",
+        "block_mdlm",
+        "--max_iters",
+        "1",
+        "--eval_interval",
+        "0",
+        "--batch_size",
+        "2",
+        "--block_size",
+        "16",
+        "--block_len",
+        "4",
+        "--n_embd",
+        "16",
+        "--n_head",
+        "4",
+        "--n_layer",
+        "1",
+        "--save_interval",
+        "0",
+        "--num_final_samples",
+        "0",
+        "--sample_interval",
+        "0",
+        "--gpt2_eval_interval",
+        "0",
+        "--use_compile",
+        "false",
+        "--resume_from",
+        str(ar_ckpt),
+        "--checkpoint_path",
+        str(bd_ckpt),
+        "--loss_log_path",
+        str(bd_loss),
+    )
+
+    assert bd_result.returncode == 0, bd_result.stderr
+    assert "Loaded model weights from" in bd_result.stdout
+    assert "optimizer_reset=true" in bd_result.stdout
+    assert bd_ckpt.exists()
+
+
 def test_generate_samples_auto_discovers_block_checkpoint(tmp_path):
     text = (ROOT / "data.txt").read_text(encoding="utf-8")
     vocab_size = len(["_"] + sorted(set(text)))

@@ -100,6 +100,12 @@ parser.add_argument("--train_split_ratio", type=float, default=0.9)
 parser.add_argument("--seed", type=int, default=1337)
 parser.add_argument("--checkpoint_path", type=str, default=None,
                     help="Defaults to ckpt_{model}.pt")
+parser.add_argument(
+    "--resume_from",
+    type=str,
+    default=None,
+    help="Warm-start from a checkpoint by loading model weights only; optimizer and LR schedule restart from scratch",
+)
 parser.add_argument("--loss_log_path", type=str, default=None,
                     help="Defaults to loss_{model}.pkl")
 parser.add_argument("--prompt_len", type=int, default=16)
@@ -343,7 +349,10 @@ def get_model_eval_batch(split):
     from the diffusion denoising setup used by the shared fixed-t eval.
     """
     if model_get_eval_batch is not None:
-        return model_get_eval_batch(split, cfg, fixed_t_step=eval_t_step_from_frac())
+        params = inspect.signature(model_get_eval_batch).parameters
+        if "fixed_t_step" in params:
+            return model_get_eval_batch(split, cfg, fixed_t_step=eval_t_step_from_frac())
+        return model_get_eval_batch(split, cfg)
     return get_eval_batch(split)
 
 
@@ -507,6 +516,29 @@ def get_lr(it):
     return min_lr + coeff * (learning_rate - min_lr)
 
 
+def load_model_weights(model, init_path):
+    checkpoint = torch.load(init_path, map_location=device)
+    state_dict = checkpoint.get("model_state_dict", checkpoint)
+    model.load_state_dict(state_dict, strict=True)
+
+    source_model = None
+    source_iter = None
+    if isinstance(checkpoint, dict):
+        source_iter = checkpoint.get("iter")
+        source_args = checkpoint.get("args")
+        if isinstance(source_args, dict):
+            source_model = source_args.get("model")
+
+    details = [f"Loaded model weights from {init_path}"]
+    if source_model is not None:
+        details.append(f"source_model={source_model}")
+    if source_iter is not None:
+        details.append(f"source_iter={source_iter}")
+    details.append("optimizer_reset=true")
+    details.append("schedule_reset=true")
+    print(" | ".join(details))
+
+
 if __name__ == "__main__":
     model = Model(
         vocab_size=vocab_size,
@@ -518,6 +550,9 @@ if __name__ == "__main__":
         dropout=dropout,
         block_len=block_len,
     ).to(device)
+    if args.resume_from is not None:
+        load_model_weights(model, args.resume_from)
+
     adamw_kwargs = {"lr": min_lr}
     if "fused" in inspect.signature(torch.optim.AdamW).parameters:
         adamw_kwargs["fused"] = (device == "cuda")
