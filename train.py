@@ -33,13 +33,18 @@ parser = argparse.ArgumentParser()
 # Model selection
 parser.add_argument(
     "--model", type=str, default="remasked",
-    choices=["remasked", "mdlm", "edit_one_pass", "edit_two_pass", "ar"],
+    choices=[
+        "remasked", "mdlm", "edit_one_pass", "edit_two_pass", "ar",
+        "block_remasked", "block_mdlm", "block_edit_one_pass", "block_edit_two_pass",
+    ],
     help="Which model variant to train",
 )
 
 # Training
 parser.add_argument("--batch_size", type=int, default=256)
 parser.add_argument("--block_size", type=int, default=256)
+parser.add_argument("--block_len", type=int, default=None,
+                    help="Diffusion block length for block models (default: block_size)")
 parser.add_argument("--max_iters", type=int, default=4000)
 parser.add_argument("--eval_interval", type=int, default=300)
 parser.add_argument("--warmup_iters", type=int, default=100)
@@ -103,6 +108,13 @@ parser.add_argument("--use_compile", type=str2bool, default=True)
 
 args = parser.parse_args()
 
+if args.block_len is None:
+    args.block_len = args.block_size
+if args.block_size % args.block_len != 0:
+    raise ValueError(
+        f"block_len={args.block_len} must divide block_size={args.block_size}"
+    )
+
 if args.checkpoint_path is None:
     args.checkpoint_path = f"ckpt_{args.model}.pt"
 if args.loss_log_path is None:
@@ -110,6 +122,7 @@ if args.loss_log_path is None:
 
 batch_size = args.batch_size
 block_size = args.block_size
+block_len = args.block_len
 max_iters = args.max_iters
 eval_interval = args.eval_interval
 warmup_iters = args.warmup_iters
@@ -145,11 +158,15 @@ num_final_samples = args.num_final_samples
 
 # --- Dynamic model import ---
 MODEL_MODULE_MAP = {
-    "remasked": "model_remasked",
-    "mdlm": "model_MDLM",
-    "edit_one_pass": "model_edit_one_pass",
-    "edit_two_pass": "model_edit_two_pass",
-    "ar": "model_AR",
+    "remasked":            "model_remasked",
+    "mdlm":                "model_MDLM",
+    "edit_one_pass":       "model_edit_one_pass",
+    "edit_two_pass":       "model_edit_two_pass",
+    "ar":                  "model_AR",
+    "block_remasked":      "model_block_remasked",
+    "block_mdlm":          "model_block_MDLM",
+    "block_edit_one_pass": "model_block_edit_one_pass",
+    "block_edit_two_pass": "model_block_edit_two_pass",
 }
 model_module = importlib.import_module(MODEL_MODULE_MAP[args.model])
 Model = model_module.Model
@@ -316,13 +333,17 @@ def get_eval_batch(split):
     return xt.to(device), x0.to(device), token_mask.to(device)
 
 
+def eval_t_step_from_frac():
+    return int(max(1, min(T, round(eval_t_frac * T))))
+
+
 def get_model_eval_batch(split):
     """
     Allow model-specific eval batches when the training objective differs
     from the diffusion denoising setup used by the shared fixed-t eval.
     """
     if model_get_eval_batch is not None:
-        return model_get_eval_batch(split, cfg)
+        return model_get_eval_batch(split, cfg, fixed_t_step=eval_t_step_from_frac())
     return get_eval_batch(split)
 
 
@@ -375,7 +396,8 @@ def estimate_gpt2_ce(diffusion_model, gpt2_model, gpt2_tokenizer,
 
         sample_text = generate_from(
             diffusion_model, x, prompt_mask,
-            T=T, block_size=block_size, vocab_size=vocab_size,
+            T=T, block_size=block_size, block_len=block_len,
+            vocab_size=vocab_size,
             mask_token_id=mask_token_id,
             survival_prob_scalar=survival_prob_scalar,
             decode=decode,
@@ -441,7 +463,8 @@ def generate(model, prompt_len=16):
 
     return generate_from(
         model, x, prompt_mask,
-        T=T, block_size=block_size, vocab_size=vocab_size,
+        T=T, block_size=block_size, block_len=block_len,
+        vocab_size=vocab_size,
         mask_token_id=mask_token_id,
         survival_prob_scalar=survival_prob_scalar,
         decode=decode,
@@ -457,6 +480,7 @@ cfg = {
     "val_data": val_data,
     "batch_size": batch_size,
     "block_size": block_size,
+    "block_len": block_len,
     "T": T,
     "mask_token_id": mask_token_id,
     "vocab_size": vocab_size,
@@ -492,6 +516,7 @@ if __name__ == "__main__":
         head_dim=head_dim,
         block_size=block_size,
         dropout=dropout,
+        block_len=block_len,
     ).to(device)
     adamw_kwargs = {"lr": min_lr}
     if "fused" in inspect.signature(torch.optim.AdamW).parameters:
@@ -579,7 +604,7 @@ if __name__ == "__main__":
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
 
-        if iter > 0 and iter % save_interval == 0:
+        if save_interval > 0 and iter > 0 and iter % save_interval == 0:
             torch.save(
                 {
                     "iter": iter,
@@ -659,7 +684,8 @@ if __name__ == "__main__":
 
         sample_text = generate_from(
             model, x, prompt_mask,
-            T=T, block_size=block_size, vocab_size=vocab_size,
+            T=T, block_size=block_size, block_len=block_len,
+            vocab_size=vocab_size,
             mask_token_id=mask_token_id,
             survival_prob_scalar=survival_prob_scalar,
             decode=decode,

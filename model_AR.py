@@ -104,7 +104,7 @@ class Block(nn.Module):
 
 class Model(nn.Module):
     def __init__(self, vocab_size, n_embd, n_head, n_layer, head_dim,
-                 block_size, dropout):
+                 block_size, dropout, **kwargs):
         super().__init__()
         self.vocab_size = vocab_size
         self.n_embd = n_embd
@@ -222,7 +222,7 @@ def compute_eval_loss(model, xt, x0, mask):
 @torch.no_grad()
 def generate_from(model, x, prompt_mask, *,
                   T, block_size, vocab_size, mask_token_id,
-                  survival_prob_scalar, decode):
+                  survival_prob_scalar, decode, **kwargs):
     """
     Autoregressive generation.  Fills positions left-to-right starting
     from the end of the prompt (first False in prompt_mask).
