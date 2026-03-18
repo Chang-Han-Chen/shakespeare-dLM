@@ -157,6 +157,7 @@ generate_from = model_module.generate_from
 model_get_batch = model_module.get_batch
 model_compute_loss = model_module.compute_loss
 model_compute_eval_loss = model_module.compute_eval_loss
+model_get_eval_batch = getattr(model_module, "get_eval_batch", None)
 
 device = (
     "cuda"
@@ -315,13 +316,23 @@ def get_eval_batch(split):
     return xt.to(device), x0.to(device), token_mask.to(device)
 
 
+def get_model_eval_batch(split):
+    """
+    Allow model-specific eval batches when the training objective differs
+    from the diffusion denoising setup used by the shared fixed-t eval.
+    """
+    if model_get_eval_batch is not None:
+        return model_get_eval_batch(split, cfg)
+    return get_eval_batch(split)
+
+
 @torch.no_grad()
 def estimate_loss(run_model):
     out = {}
     for split in ["train", "val"]:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
-            xb, yb, mb = get_eval_batch(split)
+            xb, yb, mb = get_model_eval_batch(split)
             with autocast_ctx():
                 loss = model_compute_eval_loss(run_model, xb, yb, mb)
             losses[k] = loss.item()

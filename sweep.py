@@ -110,7 +110,7 @@ def write_summary(results, out_path="sweep/summary.csv"):
         "final_train_ce", "final_val_ce", "runtime_s", "status",
     ]
     with open(out_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for r in sorted(results, key=lambda r: (r["model"], r["size"], r["lr"], r["batch_size"])):
             writer.writerow(r)
@@ -198,6 +198,33 @@ def run_one(config):
     }
 
 
+def collect_existing_result(config):
+    """
+    Reconstruct a result row from an existing sweep output directory
+    without rerunning training.
+    """
+    model, size, lr, bs = config
+    n_embd, n_layer = MODEL_SIZES[size]
+    out_dir = f"sweep/{model}/{size}_lr{lr:.0e}_bs{bs}"
+    loss_path = os.path.join(out_dir, "loss.pkl")
+    train_final, val_final = read_final_losses(loss_path)
+
+    return {
+        "model": model,
+        "size": size,
+        "n_embd": n_embd,
+        "n_layer": n_layer,
+        "lr": lr,
+        "batch_size": bs,
+        "final_train_ce": train_final,
+        "final_val_ce": val_final,
+        "runtime_s": None,
+        "status": "ok" if os.path.exists(loss_path) else "missing",
+        "label": f"{model} {size} lr={lr:.0e} bs={bs}",
+        "stderr_tail": "",
+    }
+
+
 # ---------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------
@@ -212,6 +239,11 @@ def main():
                         help="Number of runs to launch in parallel (default: 1 = sequential)")
     parser.add_argument("--dry_run", action="store_true",
                         help="Print commands without running")
+    parser.add_argument(
+        "--summary_only",
+        action="store_true",
+        help="Rebuild summary.csv from existing sweep outputs without running training",
+    )
     args = parser.parse_args()
 
     os.makedirs("sweep", exist_ok=True)
@@ -248,6 +280,12 @@ def main():
             cmd = build_command(model, size, lr, bs, out_dir)
             print(f"[{i+1}/{total}] {model} {size} lr={lr:.0e} bs={bs}:")
             print(f"  {' '.join(cmd)}")
+        return
+
+    if args.summary_only:
+        results = [collect_existing_result(config) for config in configs]
+        write_summary(results)
+        print_summary_table(results)
         return
 
     results = []

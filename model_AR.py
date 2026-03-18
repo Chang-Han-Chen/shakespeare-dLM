@@ -194,6 +194,11 @@ def get_batch(split, cfg):
     return x.to(dev), x.to(dev), None
 
 
+def get_eval_batch(split, cfg):
+    """AR validation should use the same clean next-token setup as training."""
+    return get_batch(split, cfg)
+
+
 def compute_loss(model, batch, cfg):
     """Next-token prediction CE."""
     x, targets, _ = batch
