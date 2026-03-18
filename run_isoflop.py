@@ -8,8 +8,8 @@ is held constant, varying the (model_size, num_steps) tradeoff.
 C depends on model type (see experiment_config.flop_multiplier).
 tokens_processed = batch_size * block_size * num_steps.
 
-For block models, each (model, size) is run at every block_len in
-DEFAULT_BLOCK_LENS, producing a (model, size, block_len) grid.
+Block models use a single fixed block_len (default: 4, from sweep results).
+LRs for block models are sweep-derived per (model, size) in experiment_config.
 
 Results saved to isoflop/{budget_label}/{model}/{size}/loss.pkl
 or               isoflop/{budget_label}/{model}_bl{block_len}/{size}/loss.pkl
@@ -19,6 +19,7 @@ Usage:
     python run_isoflop.py --parallel 4             # 4 at a time
     python run_isoflop.py --budgets C1 C2          # subset of budgets
     python run_isoflop.py --models ar remasked     # subset of models
+    python run_isoflop.py --block_len 4            # override block_len
     python run_isoflop.py --dry_run                # preview commands
     python run_isoflop.py --summary_only           # rebuild summary from existing
 """
@@ -37,6 +38,7 @@ from experiment_config import (
     ALL_SIZES,
     BLOCK_MODELS,
     DEFAULT_BLOCK_LENS,
+    ISOFLOP_BLOCK_LEN,
     MODEL_SIZES,
     build_command,
     dropout_for_model,
@@ -179,8 +181,12 @@ def run_one(config):
     }
 
 
-def enumerate_configs(budget_labels, models, sizes, block_lens):
-    """Build (budget_label, budget, model, size, block_len) list, interleaved by size."""
+def enumerate_configs(budget_labels, models, sizes, block_len=ISOFLOP_BLOCK_LEN):
+    """Build (budget_label, budget, model, size, block_len) list, interleaved by size.
+
+    Block models use a single fixed block_len (default: ISOFLOP_BLOCK_LEN=4).
+    Non-block models use block_len=None.
+    """
     configs = []
     for bl in budget_labels:
         budget = FLOP_BUDGETS[bl]
@@ -191,8 +197,7 @@ def enumerate_configs(budget_labels, models, sizes, block_lens):
                 if steps is None:
                     continue
                 if is_block_model(model):
-                    for blen in block_lens:
-                        by_size[size].append((bl, budget, model, size, blen))
+                    by_size[size].append((bl, budget, model, size, block_len))
                 else:
                     by_size[size].append((bl, budget, model, size, None))
 
@@ -266,9 +271,8 @@ def main():
                         help="Which models to run")
     parser.add_argument("--sizes", nargs="+", default=ALL_SIZES,
                         help="Which sizes to run")
-    parser.add_argument("--block_lens", nargs="+", type=int,
-                        default=DEFAULT_BLOCK_LENS,
-                        help="Block lengths to sweep for block models")
+    parser.add_argument("--block_len", type=int, default=ISOFLOP_BLOCK_LEN,
+                        help="Fixed block length for block models (default: %(default)s)")
     parser.add_argument("--parallel", type=int, default=1,
                         help="Number of parallel runs")
     parser.add_argument("--dry_run", action="store_true")
@@ -278,14 +282,14 @@ def main():
 
     os.makedirs("isoflop", exist_ok=True)
 
-    configs = enumerate_configs(args.budgets, args.models, args.sizes, args.block_lens)
+    configs = enumerate_configs(args.budgets, args.models, args.sizes, block_len=args.block_len)
     total = len(configs)
 
     print(f"IsoFLOP experiment: {total} runs")
     print(f"Budgets: {args.budgets}")
     print(f"Models: {args.models}")
     print(f"Sizes: {args.sizes}")
-    print(f"Block lens (for block models): {args.block_lens}")
+    print(f"Block len (for block models): {args.block_len}")
     print(f"Step bounds: [{MIN_STEPS}, {MAX_STEPS}]")
 
     if args.dry_run:
@@ -312,7 +316,7 @@ def main():
                 row += f"  |   {n_valid}"
                 print(row)
                 if is_block_model(m):
-                    print(f"    {'':22} (× {len(args.block_lens)} block_lens: {args.block_lens})")
+                    print(f"    {'':22} (bl={args.block_len})")
 
         print(f"\n--- Full command list ({total} runs) ---\n")
         for i, (bl_label, budget, model, size, block_len) in enumerate(configs):

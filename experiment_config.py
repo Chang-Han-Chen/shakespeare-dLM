@@ -57,6 +57,9 @@ ALL_SIZES = list(MODEL_SIZES.keys())
 
 DEFAULT_BLOCK_LENS = [4, 16, 64]
 
+# Default block_len for IsoFLOP / scaling experiments with block models.
+ISOFLOP_BLOCK_LEN = 4
+
 
 # ---------------------------------------------------------------
 # FLOP accounting
@@ -132,7 +135,43 @@ _BASE_LR = {
     ("ar",            "3M"):   3e-3,
 }
 
-# Block models inherit from their non-block counterpart.
+# Block model LRs from sweep (bl=4, 1000-step runs on Shakespeare).
+# 0.5M and 2M interpolated from neighbors.
+_BLOCK_LR = {
+    # block_remasked
+    ("block_remasked",      "0.1M"): 1e-2,
+    ("block_remasked",      "0.3M"): 1e-2,
+    ("block_remasked",      "0.5M"): 1e-2,
+    ("block_remasked",      "1M"):   1e-2,
+    ("block_remasked",      "2M"):   3e-3,
+    ("block_remasked",      "3M"):   3e-3,
+
+    # block_mdlm
+    ("block_mdlm",          "0.1M"): 1e-2,
+    ("block_mdlm",          "0.3M"): 1e-2,
+    ("block_mdlm",          "0.5M"): 1e-2,
+    ("block_mdlm",          "1M"):   1e-2,
+    ("block_mdlm",          "2M"):   3e-3,
+    ("block_mdlm",          "3M"):   3e-3,
+
+    # block_edit_one_pass
+    ("block_edit_one_pass",  "0.1M"): 1e-2,
+    ("block_edit_one_pass",  "0.3M"): 1e-2,
+    ("block_edit_one_pass",  "0.5M"): 1e-2,
+    ("block_edit_one_pass",  "1M"):   3e-3,
+    ("block_edit_one_pass",  "2M"):   3e-3,
+    ("block_edit_one_pass",  "3M"):   3e-3,
+
+    # block_edit_two_pass
+    ("block_edit_two_pass",  "0.1M"): 1e-2,
+    ("block_edit_two_pass",  "0.3M"): 1e-2,
+    ("block_edit_two_pass",  "0.5M"): 1e-2,
+    ("block_edit_two_pass",  "1M"):   3e-3,
+    ("block_edit_two_pass",  "2M"):   3e-3,
+    ("block_edit_two_pass",  "3M"):   3e-3,
+}
+
+# Keep prefix map for other uses (e.g. model family grouping).
 _BLOCK_PREFIX_MAP = {
     "block_remasked":      "remasked",
     "block_mdlm":          "mdlm",
@@ -141,10 +180,7 @@ _BLOCK_PREFIX_MAP = {
 }
 
 OPTIMAL_LR = dict(_BASE_LR)
-for bm, base in _BLOCK_PREFIX_MAP.items():
-    for size in ALL_SIZES:
-        if (base, size) in _BASE_LR:
-            OPTIMAL_LR[(bm, size)] = _BASE_LR[(base, size)]
+OPTIMAL_LR.update(_BLOCK_LR)
 
 
 def get_optimal_lr(model, size):
