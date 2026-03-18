@@ -31,10 +31,10 @@ SWEEP_SIZES = ["0.1M", "0.3M", "1M", "3M"]
 LEARNING_RATES = [3e-4, 1e-3, 3e-3, 1e-2]
 BLOCK_LENS = [1, 4, 16]
 
-SWEEP_MAX_ITERS = 2000
-SWEEP_EVAL_INTERVAL = 500
+SWEEP_MAX_ITERS = 1000
+SWEEP_EVAL_INTERVAL = 200
 SWEEP_EVAL_ITERS = 20
-SWEEP_WARMUP_ITERS = 100
+SWEEP_WARMUP_ITERS = 200
 
 # Adaptive parallelism: maps size -> max parallel jobs.
 # Based on empirical VRAM per process on a 32GB GPU:
@@ -60,24 +60,6 @@ def read_final_val_loss(odir):
         log = pickle.load(f)
     if log.get("val"):
         return log["val"][-1][1]
-    return None
-
-
-def get_gpu_mem_mb():
-    """Get total GPU memory used (in MiB) by this process's PID."""
-    pid = os.getpid()
-    try:
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-compute-apps=pid,used_memory",
-             "--format=csv,noheader,nounits"],
-            text=True, timeout=5,
-        )
-        for line in out.strip().split("\n"):
-            parts = line.split(",")
-            if len(parts) == 2 and int(parts[0].strip()) == pid:
-                return int(parts[1].strip())
-    except Exception:
-        pass
     return None
 
 
@@ -109,9 +91,8 @@ def run_one(config):
         pass
     runtime = time.time() - t0
 
-    gpu_mem = get_gpu_mem_mb()
     val_loss = read_final_val_loss(odir)
-    return (model, size, lr, block_len, val_loss, runtime, gpu_mem)
+    return (model, size, lr, block_len, val_loss, runtime)
 
 
 def main():
@@ -132,13 +113,19 @@ def main():
     total = len(configs)
     print(f"Sweep: {total} runs ({len(BLOCK_MODELS)} models × {len(SWEEP_SIZES)} sizes × {len(LEARNING_RATES)} LRs × {len(BLOCK_LENS)} block_lens)")
 
+    HEAVY_MODEL = "block_edit_two_pass"
+
     if args.dry_run:
         if args.adaptive:
             for size in SWEEP_SIZES:
                 p = PARALLEL_BY_SIZE.get(size, 4)
-                group = [(m, s, lr, bl) for m, s, lr, bl in configs if s == size]
-                print(f"\n  {size} ({len(group)} runs, parallel={p}):")
-                for model, s, lr, bl in group:
+                heavy = [(m, s, lr, bl) for m, s, lr, bl in configs if s == size and m == HEAVY_MODEL]
+                light = [(m, s, lr, bl) for m, s, lr, bl in configs if s == size and m != HEAVY_MODEL]
+                print(f"\n  {size} edit_two_pass ({len(heavy)} runs, parallel={max(1, p // 2)}):")
+                for model, s, lr, bl in heavy:
+                    print(f"    {model} lr={lr:.0e} bl={bl}")
+                print(f"  {size} others ({len(light)} runs, parallel={p}):")
+                for model, s, lr, bl in light:
                     print(f"    {model} lr={lr:.0e} bl={bl}")
         else:
             for model, size, lr, bl in configs:
@@ -150,21 +137,37 @@ def main():
     t_start = time.time()
 
     if args.adaptive:
-        # Group configs by size, run each group with tuned parallelism
+        # For each size: run edit_two_pass first at half parallelism,
+        # wait for all to finish, then run the other 3 models at full.
         done = 0
         for size in SWEEP_SIZES:
-            group = [c for c in configs if c[1] == size]
             p = PARALLEL_BY_SIZE.get(size, 4)
-            print(f"\n--- {size} models: {len(group)} runs, parallel={p} ---")
-            with ProcessPoolExecutor(max_workers=p) as ex:
-                futs = {ex.submit(run_one, c): c for c in group}
+            heavy = [c for c in configs if c[1] == size and c[0] == HEAVY_MODEL]
+            light = [c for c in configs if c[1] == size and c[0] != HEAVY_MODEL]
+
+            # Phase 1: edit_two_pass at half parallelism
+            p_heavy = max(1, p // 2)
+            print(f"\n--- {size} edit_two_pass: {len(heavy)} runs, parallel={p_heavy} ---")
+            with ProcessPoolExecutor(max_workers=p_heavy) as ex:
+                futs = {ex.submit(run_one, c): c for c in heavy}
                 for fut in as_completed(futs):
                     done += 1
                     r = fut.result()
-                    model, sz, lr, bl, val, _, mem = r
+                    model, sz, lr, bl, val, _ = r
                     v = f"{val:.4f}" if val is not None else "N/A"
-                    m = f"{mem}MiB" if mem is not None else "?"
-                    print(f"[{done}/{total}] {model} {sz} lr={lr:.0e} bl={bl} val={v} vram={m}")
+                    print(f"[{done}/{total}] {model} {sz} lr={lr:.0e} bl={bl} val={v}")
+                    results.append(r)
+
+            # Phase 2: other 3 models at full parallelism
+            print(f"--- {size} others: {len(light)} runs, parallel={p} ---")
+            with ProcessPoolExecutor(max_workers=p) as ex:
+                futs = {ex.submit(run_one, c): c for c in light}
+                for fut in as_completed(futs):
+                    done += 1
+                    r = fut.result()
+                    model, sz, lr, bl, val, _ = r
+                    v = f"{val:.4f}" if val is not None else "N/A"
+                    print(f"[{done}/{total}] {model} {sz} lr={lr:.0e} bl={bl} val={v}")
                     results.append(r)
     elif args.parallel <= 1:
         for i, config in enumerate(configs):
@@ -172,10 +175,7 @@ def main():
             print(f"[{i+1}/{total}] {model} {size} lr={lr:.0e} bl={bl}", end=" ", flush=True)
             result = run_one(config)
             val = result[4]
-            mem = result[6]
-            v = f"val={val:.4f}" if val is not None else "val=N/A"
-            m = f"vram={mem}MiB" if mem is not None else "vram=?"
-            print(f"{v} {m}")
+            print(f"val={val:.4f}" if val is not None else "val=N/A")
             results.append(result)
     else:
         print(f"Running {args.parallel} parallel jobs")
@@ -185,25 +185,23 @@ def main():
             for fut in as_completed(futs):
                 done += 1
                 r = fut.result()
-                model, size, lr, bl, val, _, mem = r
+                model, size, lr, bl, val, _ = r
                 v = f"{val:.4f}" if val is not None else "N/A"
-                m = f"{mem}MiB" if mem is not None else "?"
-                print(f"[{done}/{total}] {model} {size} lr={lr:.0e} bl={bl} val={v} vram={m}")
+                print(f"[{done}/{total}] {model} {size} lr={lr:.0e} bl={bl} val={v}")
                 results.append(r)
 
     print(f"\nTotal time: {time.time() - t_start:.0f}s")
 
     # --- All losses ---
     print("\n--- All losses ---")
-    print(f"{'model':<28} {'size':<6} {'lr':<8} {'bl':>3} {'val_ce':>9} {'vram':>10}")
-    for model, size, lr, bl, val, _, mem in sorted(results):
+    print(f"{'model':<28} {'size':<6} {'lr':<8} {'bl':>3} {'val_ce':>9}")
+    for model, size, lr, bl, val, _ in sorted(results):
         v = f"{val:.4f}" if val is not None else "N/A"
-        m = f"{mem}MiB" if mem is not None else "?"
-        print(f"{model:<28} {size:<6} {lr:<8.0e} {bl:>3} {v:>9} {m:>10}")
+        print(f"{model:<28} {size:<6} {lr:<8.0e} {bl:>3} {v:>9}")
 
     # --- Best (LR, block_len) per (model, size) ---
     best = {}
-    for model, size, lr, bl, val, _, mem in results:
+    for model, size, lr, bl, val, _ in results:
         if val is None:
             continue
         key = (model, size)
