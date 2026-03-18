@@ -37,7 +37,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 MODEL_SIZES = {
     "0.1M":  (64,   2,  0.107e6),
     "0.3M":  (96,   3,  0.345e6),
-    "0.5M":  (116,  3,  0.501e6),
+    "0.5M":  (120,  3,  0.535e6),
     "1M":    (128,  5,  1.002e6),
     "2M":    (200,  4,  1.949e6),
     "3M":    (256,  4,  3.182e6),
