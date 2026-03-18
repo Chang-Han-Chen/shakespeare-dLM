@@ -5,12 +5,12 @@ import math
 import pickle
 import argparse
 import importlib
+import inspect
 from contextlib import nullcontext
 
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 
 
 # ---------------------------------------------------------------------
@@ -33,7 +33,7 @@ parser = argparse.ArgumentParser()
 # Model selection
 parser.add_argument(
     "--model", type=str, default="remasked",
-    choices=["remasked", "mdlm", "edit_one_pass", "edit_two_pass"],
+    choices=["remasked", "mdlm", "edit_one_pass", "edit_two_pass", "ar"],
     help="Which model variant to train",
 )
 
@@ -77,17 +77,36 @@ parser.add_argument("--eval_t_frac", type=float, default=0.6,
                     help="Fixed time fraction for validation denoising CE")
 parser.add_argument("--gpt2_eval_samples", type=int, default=100,
                     help="Number of samples for GPT2-large CE metric")
+parser.add_argument(
+    "--gpt2_eval_interval",
+    type=int,
+    default=None,
+    help="How often to run GPT2-large evaluation (defaults to eval_interval, 0 disables)",
+)
+parser.add_argument(
+    "--sample_interval",
+    type=int,
+    default=None,
+    help="How often to print a generated sample during training (defaults to eval_interval, 0 disables)",
+)
 
 # Data / misc
 parser.add_argument("--train_split_ratio", type=float, default=0.9)
 parser.add_argument("--seed", type=int, default=1337)
-parser.add_argument("--checkpoint_path", type=str, default="model_simple_remasked.pt")
-parser.add_argument("--loss_log_path", type=str, default="loss_simple_remasked.pkl")
+parser.add_argument("--checkpoint_path", type=str, default=None,
+                    help="Defaults to ckpt_{model}.pt")
+parser.add_argument("--loss_log_path", type=str, default=None,
+                    help="Defaults to loss_{model}.pkl")
 parser.add_argument("--prompt_len", type=int, default=16)
 parser.add_argument("--num_final_samples", type=int, default=10)
 parser.add_argument("--use_compile", type=str2bool, default=True)
 
 args = parser.parse_args()
+
+if args.checkpoint_path is None:
+    args.checkpoint_path = f"ckpt_{args.model}.pt"
+if args.loss_log_path is None:
+    args.loss_log_path = f"loss_{args.model}.pkl"
 
 batch_size = args.batch_size
 block_size = args.block_size
@@ -99,6 +118,12 @@ min_lr = args.min_lr
 eval_iters = args.eval_iters
 save_interval = args.save_interval
 grad_clip = args.grad_clip
+gpt2_eval_interval = (
+    eval_interval if args.gpt2_eval_interval is None else args.gpt2_eval_interval
+)
+sample_interval = (
+    eval_interval if args.sample_interval is None else args.sample_interval
+)
 
 n_embd = args.n_embd
 n_head = args.n_head
@@ -124,6 +149,7 @@ MODEL_MODULE_MAP = {
     "mdlm": "model_MDLM",
     "edit_one_pass": "model_edit_one_pass",
     "edit_two_pass": "model_edit_two_pass",
+    "ar": "model_AR",
 }
 model_module = importlib.import_module(MODEL_MODULE_MAP[args.model])
 Model = model_module.Model
@@ -456,20 +482,29 @@ if __name__ == "__main__":
         block_size=block_size,
         dropout=dropout,
     ).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=min_lr)
+    adamw_kwargs = {"lr": min_lr}
+    if "fused" in inspect.signature(torch.optim.AdamW).parameters:
+        adamw_kwargs["fused"] = (device == "cuda")
+    optimizer = torch.optim.AdamW(model.parameters(), **adamw_kwargs)
 
     use_compile = (device == "cuda") and hasattr(torch, "compile") and args.use_compile
     compiled_model = torch.compile(model) if use_compile else model
 
-    # Load GPT2-large for sample quality evaluation (bf16 — inference only)
-    print("Loading GPT2-large for evaluation...")
-    gpt2_tokenizer = GPT2TokenizerFast.from_pretrained("gpt2-large")
-    gpt2_dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    gpt2_model = GPT2LMHeadModel.from_pretrained(
-        "gpt2-large", torch_dtype=gpt2_dtype
-    ).to(device)
-    gpt2_model.eval()
-    print(f"GPT2-large loaded ({gpt2_dtype}).")
+    gpt2_model = None
+    gpt2_tokenizer = None
+    gpt2_enabled = gpt2_eval_samples > 0 and gpt2_eval_interval > 0
+    if gpt2_enabled:
+        from transformers import GPT2LMHeadModel, GPT2TokenizerFast
+
+        # Load GPT2-large for evaluation only when that metric is enabled.
+        print("Loading GPT2-large for evaluation...")
+        gpt2_tokenizer = GPT2TokenizerFast.from_pretrained("gpt2-large")
+        gpt2_dtype = torch.bfloat16 if device == "cuda" else torch.float32
+        gpt2_model = GPT2LMHeadModel.from_pretrained(
+            "gpt2-large", torch_dtype=gpt2_dtype
+        ).to(device)
+        gpt2_model.eval()
+        print(f"GPT2-large loaded ({gpt2_dtype}).")
 
     print_run_info(model)
 
@@ -484,25 +519,43 @@ if __name__ == "__main__":
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
-        if iter % eval_interval == 0:
-            model.eval()
-            metrics = estimate_loss(compiled_model)
-            gpt2_ce = estimate_gpt2_ce(
-                model, gpt2_model, gpt2_tokenizer,
-                num_samples=gpt2_eval_samples,
-            )
-            current_token_epoch = token_epochs_from_steps(iter, len(train_data))
-            print(
-                f"step {iter} | tok_epoch {current_token_epoch:.2f} | "
-                f"train {metrics['train']:.4f} | val {metrics['val']:.4f} | "
-                f"gpt2_ce {gpt2_ce:.4f} | lr {lr:.6f}"
-            )
-            train_losses.append((iter, metrics["train"]))
-            val_losses.append((iter, metrics["val"]))
-            gpt2_ces.append((iter, gpt2_ce))
+        should_run_loss_eval = eval_interval > 0 and (iter % eval_interval == 0)
+        should_run_gpt2_eval = gpt2_enabled and (iter % gpt2_eval_interval == 0)
+        should_print_sample = sample_interval > 0 and (iter % sample_interval == 0)
 
-            print("Generating sample...")
-            print(generate(model, prompt_len=prompt_len))
+        if should_run_loss_eval or should_run_gpt2_eval or should_print_sample:
+            model.eval()
+            metrics = None
+            gpt2_ce = None
+
+            if should_run_loss_eval:
+                metrics = estimate_loss(compiled_model)
+                train_losses.append((iter, metrics["train"]))
+                val_losses.append((iter, metrics["val"]))
+
+            if should_run_gpt2_eval:
+                gpt2_ce = estimate_gpt2_ce(
+                    model, gpt2_model, gpt2_tokenizer,
+                    num_samples=gpt2_eval_samples,
+                )
+                gpt2_ces.append((iter, gpt2_ce))
+
+            current_token_epoch = token_epochs_from_steps(iter, len(train_data))
+            log_parts = [
+                f"step {iter}",
+                f"tok_epoch {current_token_epoch:.2f}",
+            ]
+            if metrics is not None:
+                log_parts.append(f"train {metrics['train']:.4f}")
+                log_parts.append(f"val {metrics['val']:.4f}")
+            if gpt2_ce is not None:
+                log_parts.append(f"gpt2_ce {gpt2_ce:.4f}")
+            log_parts.append(f"lr {lr:.6f}")
+            print(" | ".join(log_parts))
+
+            if should_print_sample:
+                print("Generating sample...")
+                print(generate(model, prompt_len=prompt_len))
             model.train()
 
         batch = model_get_batch("train", cfg)
