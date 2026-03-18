@@ -602,6 +602,30 @@ if __name__ == "__main__":
                 f"loss {loss.item():.4f} | grad norm {grad_norm:.4f}"
             )
 
+    # --- Forced final eval (avoids stale metrics when max_iters % eval_interval != 0) ---
+    last_eval_iter = max(s for s, _ in val_losses) if val_losses else -1
+    if last_eval_iter < max_iters - 1:
+        model.eval()
+        final_metrics = estimate_loss(compiled_model)
+        train_losses.append((max_iters, final_metrics["train"]))
+        val_losses.append((max_iters, final_metrics["val"]))
+        log_parts = [f"step {max_iters} (final)",
+                     f"train {final_metrics['train']:.4f}",
+                     f"val {final_metrics['val']:.4f}"]
+
+        if gpt2_enabled:
+            last_gpt2_iter = max(s for s, _ in gpt2_ces) if gpt2_ces else -1
+            if last_gpt2_iter < max_iters - 1:
+                gpt2_ce = estimate_gpt2_ce(
+                    model, gpt2_model, gpt2_tokenizer,
+                    num_samples=gpt2_eval_samples,
+                )
+                gpt2_ces.append((max_iters, gpt2_ce))
+                log_parts.append(f"gpt2_ce {gpt2_ce:.4f}")
+
+        print(" | ".join(log_parts))
+        model.train()
+
     torch.save(
         {
             "iter": max_iters,
