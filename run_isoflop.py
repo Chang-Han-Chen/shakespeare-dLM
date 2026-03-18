@@ -275,6 +275,8 @@ def main():
                         help="Fixed block length for block models (default: %(default)s)")
     parser.add_argument("--parallel", type=int, default=1,
                         help="Number of parallel runs")
+    parser.add_argument("--adaptive", action="store_true",
+                        help="Run edit_two_pass at half parallelism, then others at full")
     parser.add_argument("--dry_run", action="store_true")
     parser.add_argument("--summary_only", action="store_true",
                         help="Rebuild summary from existing outputs")
@@ -354,45 +356,68 @@ def main():
         print_summary_table(results)
         return
 
-    results = []
-    t_start = time.time()
+    HEAVY_MODEL = "block_edit_two_pass"
 
-    if args.parallel <= 1:
-        for i, config in enumerate(configs):
-            bl_label, budget, model, size, block_len = config
-            steps = compute_steps(budget, model, size)
-            lr = get_optimal_lr(model, size)
-            bl_str = f" bl={block_len}" if block_len is not None else ""
-            print(f"\n[{i+1}/{total}] {bl_label} {model} {size}{bl_str} steps={steps} lr={lr:.0e}")
-            result = run_one(config)
-            if result is None:
-                continue
-            val_str = f"{result['final_val_ce']:.4f}" if result["final_val_ce"] is not None else "N/A"
-            print(f"  -> val_ce={val_str}  ({result['runtime_s']:.0f}s)")
-            if result["stderr_tail"]:
-                for line in result["stderr_tail"].split("\n"):
-                    print(f"  stderr: {line}")
-            results.append(result)
-    else:
-        print(f"Parallelism: {args.parallel} (interleaved by size)")
-        completed = 0
-        with ProcessPoolExecutor(max_workers=args.parallel) as executor:
-            future_to_config = {
-                executor.submit(run_one, config): config
-                for config in configs
-            }
-            for future in as_completed(future_to_config):
-                result = future.result()
+    def _run_batch(batch, workers, label, results_list, counter_start, total_count):
+        """Run a batch of configs with given parallelism. Returns updated counter."""
+        done = counter_start
+        if workers <= 1:
+            for config in batch:
+                bl_label, budget, model, size, block_len = config
+                steps = compute_steps(budget, model, size)
+                lr = get_optimal_lr(model, size)
+                bl_str = f" bl={block_len}" if block_len is not None else ""
+                print(f"\n[{done+1}/{total_count}] {bl_label} {model} {size}{bl_str} steps={steps} lr={lr:.0e}")
+                result = run_one(config)
                 if result is None:
                     continue
-                completed += 1
                 val_str = f"{result['final_val_ce']:.4f}" if result["final_val_ce"] is not None else "N/A"
-                print(f"[{completed}/{total}] {result['label']}  "
-                      f"val_ce={val_str}  ({result['runtime_s']:.0f}s, {result['status']})")
+                print(f"  -> val_ce={val_str}  ({result['runtime_s']:.0f}s)")
                 if result["stderr_tail"]:
                     for line in result["stderr_tail"].split("\n"):
                         print(f"  stderr: {line}")
-                results.append(result)
+                results_list.append(result)
+                done += 1
+        else:
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                future_to_config = {
+                    executor.submit(run_one, config): config
+                    for config in batch
+                }
+                for future in as_completed(future_to_config):
+                    result = future.result()
+                    if result is None:
+                        continue
+                    done += 1
+                    val_str = f"{result['final_val_ce']:.4f}" if result["final_val_ce"] is not None else "N/A"
+                    print(f"[{done}/{total_count}] {result['label']}  "
+                          f"val_ce={val_str}  ({result['runtime_s']:.0f}s, {result['status']})")
+                    if result["stderr_tail"]:
+                        for line in result["stderr_tail"].split("\n"):
+                            print(f"  stderr: {line}")
+                    results_list.append(result)
+        return done
+
+    results = []
+    t_start = time.time()
+
+    if args.adaptive:
+        p = max(args.parallel, 4)
+        p_heavy = max(1, p // 2)
+
+        heavy = [c for c in configs if c[2] == HEAVY_MODEL]
+        light = [c for c in configs if c[2] != HEAVY_MODEL]
+
+        print(f"\n--- Phase 1: edit_two_pass ({len(heavy)} runs, parallel={p_heavy}) ---")
+        done = _run_batch(heavy, p_heavy, "edit_two_pass", results, 0, total)
+
+        print(f"\n--- Phase 2: others ({len(light)} runs, parallel={p}) ---")
+        done = _run_batch(light, p, "others", results, done, total)
+    elif args.parallel <= 1:
+        _run_batch(configs, 1, "sequential", results, 0, total)
+    else:
+        print(f"Parallelism: {args.parallel} (interleaved by size)")
+        _run_batch(configs, args.parallel, "parallel", results, 0, total)
 
     t_total = time.time() - t_start
     print(f"\nTotal time: {t_total:.0f}s ({t_total/60:.1f}min)")
