@@ -40,12 +40,12 @@ parser.add_argument(
 # Training
 parser.add_argument("--batch_size", type=int, default=256)
 parser.add_argument("--block_size", type=int, default=256)
-parser.add_argument("--max_iters", type=int, default=1200)
-parser.add_argument("--eval_interval", type=int, default=100)
+parser.add_argument("--max_iters", type=int, default=4000)
+parser.add_argument("--eval_interval", type=int, default=300)
 parser.add_argument("--warmup_iters", type=int, default=100)
 parser.add_argument("--learning_rate", type=float, default=1e-3)
 parser.add_argument("--min_lr", type=float, default=1e-4)
-parser.add_argument("--eval_iters", type=int, default=200)
+parser.add_argument("--eval_iters", type=int, default=50)
 parser.add_argument("--save_interval", type=int, default=200)
 parser.add_argument("--grad_clip", type=float, default=1.0)
 
@@ -75,13 +75,13 @@ parser.add_argument("--lambda_corr", type=float, default=1.0,
 # Eval
 parser.add_argument("--eval_t_frac", type=float, default=0.6,
                     help="Fixed time fraction for validation denoising CE")
-parser.add_argument("--gpt2_eval_samples", type=int, default=100,
+parser.add_argument("--gpt2_eval_samples", type=int, default=50,
                     help="Number of samples for GPT2-large CE metric")
 parser.add_argument(
     "--gpt2_eval_interval",
     type=int,
-    default=None,
-    help="How often to run GPT2-large evaluation (defaults to eval_interval, 0 disables)",
+    default=600,
+    help="How often to run GPT2-large evaluation (0 disables)",
 )
 parser.add_argument(
     "--sample_interval",
