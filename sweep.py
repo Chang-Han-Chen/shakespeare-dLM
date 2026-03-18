@@ -216,13 +216,31 @@ def main():
 
     os.makedirs("sweep", exist_ok=True)
 
-    # Build all run configs
-    configs = list(itertools.product(args.models, args.sizes, LEARNING_RATES, BATCH_SIZES))
+    # Build all run configs, interleaved by size so that parallel batches
+    # mix small and large models for more uniform GPU memory usage.
+    # Group by (model, lr, bs), then round-robin across sizes.
+    non_size_combos = list(itertools.product(args.models, LEARNING_RATES, BATCH_SIZES))
+    configs = []
+    for size in args.sizes:
+        for model, lr, bs in non_size_combos:
+            configs.append((model, size, lr, bs))
+    # Interleave: take one config per size in round-robin order
+    from collections import defaultdict
+    by_size = defaultdict(list)
+    for c in configs:
+        by_size[c[1]].append(c)
+    configs = []
+    max_per_size = max(len(v) for v in by_size.values())
+    for i in range(max_per_size):
+        for size in args.sizes:
+            if i < len(by_size[size]):
+                configs.append(by_size[size][i])
+
     total = len(configs)
     print(f"Sweep: {total} runs ({len(args.models)} models × {len(args.sizes)} sizes × "
           f"{len(LEARNING_RATES)} LRs × {len(BATCH_SIZES)} BSs)")
     if args.parallel > 1:
-        print(f"Parallelism: {args.parallel} concurrent runs")
+        print(f"Parallelism: {args.parallel} concurrent runs (interleaved by size)")
 
     if args.dry_run:
         for i, (model, size, lr, bs) in enumerate(configs):
