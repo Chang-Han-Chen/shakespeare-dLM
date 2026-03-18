@@ -314,9 +314,15 @@ def generate_from(model, x, prompt_mask, *,
 
         masked_now = (x == mask_token_id)
         total_masked_now = masked_now.sum(dim=1)
-        total_masked_next = torch.floor(
-            (1.0 - survival_prob_scalar(t - 1)) * (~prompt_mask).sum(dim=1).float()
-        ).long()
+
+        if t == 1:
+            # Final step: unmask everything — don't rely on schedule
+            # (t_min clipping would prevent full unmasking otherwise)
+            total_masked_next = torch.zeros_like(total_masked_now)
+        else:
+            total_masked_next = torch.floor(
+                (1.0 - survival_prob_scalar(t - 1)) * (~prompt_mask).sum(dim=1).float()
+            ).long()
         num_to_fill = (total_masked_now - total_masked_next).clamp_min(0)
 
         if masked_now.any():
