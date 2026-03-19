@@ -60,8 +60,8 @@ def main():
     parser.add_argument("--custom_prompt", type=str, default=None,
                         help="Use a custom prompt instead of validation data")
     parser.add_argument("--T", type=int, default=100)
-    parser.add_argument("--t_min", type=float, default=0.1)
-    parser.add_argument("--t_max", type=float, default=0.9)
+    parser.add_argument("--t_min", type=float, default=0.45)
+    parser.add_argument("--t_max", type=float, default=0.95)
     parser.add_argument("--noise_schedule", type=str, default="linear")
     parser.add_argument("--block_size", type=int, default=256)
     parser.add_argument("--seed", type=int, default=42)

@@ -62,9 +62,9 @@ parser.add_argument("--dropout", type=float, default=0.1)
 
 # Diffusion / corruption
 parser.add_argument("--T", type=int, default=100)
-parser.add_argument("--t_min", type=float, default=0.1,
+parser.add_argument("--t_min", type=float, default=0.45,
                     help="Lower clipping bound for t/T (0.0 = no lower clip)")
-parser.add_argument("--t_max", type=float, default=0.9,
+parser.add_argument("--t_max", type=float, default=0.95,
                     help="Upper clipping bound for t/T (1.0 = no upper clip)")
 parser.add_argument(
     "--noise_schedule",
