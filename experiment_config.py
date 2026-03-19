@@ -65,6 +65,13 @@ ISOFLOP_BLOCK_LEN = 4
 # FLOP accounting
 # ---------------------------------------------------------------
 
+ISOFLOP_BATCH_SIZE = 128
+ISOFLOP_BLOCK_SIZE = 256
+ISOFLOP_TOKENS_PER_STEP = ISOFLOP_BATCH_SIZE * ISOFLOP_BLOCK_SIZE  # 32768
+ISOFLOP_MIN_STEPS = 150
+ISOFLOP_MAX_STEPS = 10000
+
+
 def flop_multiplier(model):
     """
     Approximate C in FLOPs = C * N * tokens_processed.
@@ -78,6 +85,16 @@ def flop_multiplier(model):
     if "edit_two_pass" in model:
         return 24 if is_block_model(model) else 12
     return 12 if is_block_model(model) else 6
+
+
+def compute_isoflop_steps(budget, model, size):
+    """Steps needed for (budget, model, size). Returns None if out of [150, 10000]."""
+    _, _, N = MODEL_SIZES[size]
+    C = flop_multiplier(model)
+    steps = int(budget / (C * N * ISOFLOP_TOKENS_PER_STEP))
+    if ISOFLOP_MIN_STEPS <= steps <= ISOFLOP_MAX_STEPS:
+        return steps
+    return None
 
 
 def dropout_for_model(model, default_dropout=0.1):
