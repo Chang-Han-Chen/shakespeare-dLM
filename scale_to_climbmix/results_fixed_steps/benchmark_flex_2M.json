@@ -1,0 +1,54 @@
+{
+  "all_round_seconds_per_step": {
+    "flex": [
+      0.09638832385341327,
+      0.0955111268752565,
+      0.09609260340221226,
+      0.09745618025772274,
+      0.09783027251251042,
+      0.09703742239313821
+    ],
+    "sdpa": [
+      0.1005839667438219,
+      0.10056001304959257,
+      0.10087124514393508,
+      0.09997325895043711,
+      0.10038268271212776,
+      0.10068085455956559
+    ]
+  },
+  "batch_size": 64,
+  "dual_stream_length": 512,
+  "final_timing_losses": {
+    "flex": 4.364835739135742,
+    "sdpa": 4.312297821044922
+  },
+  "flex_block_size": [
+    128,
+    128
+  ],
+  "flex_speedup": 1.039902824192933,
+  "flex_tile_sparsity_percent": 50.0,
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "gradient_cosine": 0.9999945397932004,
+  "initial_val_like_train_loss": {
+    "flex": 8.927309036254883,
+    "sdpa": 8.927277565002441
+  },
+  "logical_mask_density": 0.25390625,
+  "logit_max_absolute_difference": 0.0078125,
+  "logit_mean_absolute_difference": 0.00039539262070320547,
+  "n_params": 1985536,
+  "note": "Run concurrently with the active fixed-step baseline sweep; alternating rounds control for shared-GPU load.",
+  "relative_gradient_l2": 0.0033176586291195154,
+  "rounds": 6,
+  "seconds_per_step": {
+    "flex": 0.09671287312327574,
+    "sdpa": 0.10057198989670724
+  },
+  "sequence_length_per_stream": 256,
+  "size": "2M",
+  "steps_per_round": 12,
+  "torch_version": "2.9.1+cu130",
+  "warmup_steps": 5
+}
