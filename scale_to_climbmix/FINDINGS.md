@@ -33,6 +33,11 @@ negative results as well as positive ones.
    one epoch; retaining the AR end decay is marginally better; and a separate
    AR-LR sweep changes the curve negligibly. The optimizer reset remains a
    possible transition cost, not an established root cause.
+6. **Curriculum utility depends on diffusion block length.** At 10M parameters
+   and fixed \(D/N=40\), block length 4 prefers pure BD, while block length 32
+   has a measured optimum at \(p_{\mathrm{AR}}=0.1\), improving validation
+   NELBO by 0.02390. The harder block-32 pure-BD task starts 0.14779 NELBO
+   worse, consistent with a short AR prefix helping an undertrained objective.
 
 The strongest current interpretation is therefore:
 
@@ -70,6 +75,10 @@ learned norms.
 | 2M | 7 | 112 | 7 | 304 | 1,985,536 |
 | 4M | 11 | 144 | 9 | 384 | 3,920,256 |
 | 8M | 12 | 208 | 13 | 560 | 7,979,296 |
+| 10M* | 13 | 224 | 14 | 600 | 9,692,032 |
+
+`10M*` is an experimental extension used only for the fixed-\(D/N=40\)
+block-length follow-up. It is not part of the completed pure-BD IsoFLOP grid.
 
 Block diffusion uses a BD3-style dual stream \([x_t\mid x_0]\), sequence
 length 256 per stream, and diffusion blocks of four tokens. A noisy block can
@@ -229,7 +238,37 @@ currently limited to models through 2M.
 
 ![Matched-step curriculum through 2M](figures_fixed_steps/fixed_steps_curriculum_through_2M.png)
 
-## 4. Transition diagnostics
+## 4. Block length and curriculum at 10M
+
+A fixed-token follow-up tested whether the usefulness of AR curriculum changes
+with diffusion task difficulty. The experimental 9,692,032-parameter model
+received 387,678,208 clean tokens, or \(D/N=39.9997\), over 23,662 optimizer
+steps. Block lengths 4 and 32 each used
+\(p_{\mathrm{AR}}=\{0,0.1,0.3,0.5,0.7\}\). All points used peak LR 9e-4,
+weight decay 0.1, one shared AR trunk, an optimizer reset at transition, and a
+fresh 5%/80%/15% WSD schedule for BD.
+
+| block length | p=0.0 | p=0.1 | p=0.3 | p=0.5 | p=0.7 |
+|---:|---:|---:|---:|---:|---:|
+| 4 | 4.02699 | 4.04424 | 4.03974 | 4.07522 | 4.11789 |
+| 32 | 4.17478 | **4.15088** | 4.16442 | 4.20112 | 4.27510 |
+
+For block length 4, every nonzero AR fraction hurts; the least harmful is
+\(p_{\mathrm{AR}}=0.3\), still 0.01275 worse than pure BD. For block length
+32, \(p_{\mathrm{AR}}=0.1\) improves NELBO by 0.02390 and
+\(p_{\mathrm{AR}}=0.3\) improves it by 0.01036, while larger fractions hurt.
+Thus the measured block-32 optimum is locally bracketed on the requested grid.
+
+This is consistent with the larger block making BD harder and leaving the
+model undertrained relative to its objective. Because tokens and total steps
+are matched, the gain is not extra data exposure: the AR prefix supplies an
+easier representation-learning signal. This interpretation remains a
+single-seed result at one model size and token ratio, so it establishes a
+block-length interaction rather than its scaling law.
+
+![10M fixed-token block comparison](figures_fixed_dn40_10M/fixed_dn40_10M_blocks.png)
+
+## 5. Transition diagnostics
 
 Several fast diagnostics tested explanations for curriculum underperformance.
 

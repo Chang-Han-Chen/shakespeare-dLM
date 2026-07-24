@@ -117,8 +117,14 @@ class ClimbMixData:
         return self._tensor(tokens, batch_size).to(self.device, non_blocking=True)
 
 
-def sample_mask_probabilities(batch_size: int, device: torch.device) -> torch.Tensor:
-    n_blocks = SEQ_LEN // BLOCK_LEN
+def sample_mask_probabilities(
+    batch_size: int,
+    device: torch.device,
+    block_len: int = BLOCK_LEN,
+) -> torch.Tensor:
+    if SEQ_LEN % block_len:
+        raise ValueError("block_len must divide sequence length")
+    n_blocks = SEQ_LEN // block_len
     return MASK_EPS + (1.0 - MASK_EPS) * torch.rand(
         batch_size,
         n_blocks,
@@ -130,8 +136,11 @@ def stratified_mask_probabilities(
     batch_size: int,
     device: torch.device,
     batch_index: int,
+    block_len: int = BLOCK_LEN,
 ) -> torch.Tensor:
-    n_blocks = SEQ_LEN // BLOCK_LEN
+    if SEQ_LEN % block_len:
+        raise ValueError("block_len must divide sequence length")
+    n_blocks = SEQ_LEN // block_len
     count = batch_size * n_blocks
     u = (torch.arange(count, device=device, dtype=torch.float32) + 0.5) / count
     u = torch.remainder(u + batch_index * 0.6180339887498949, 1.0)
@@ -139,6 +148,9 @@ def stratified_mask_probabilities(
 
 
 def corrupt(x0: torch.Tensor, probabilities: torch.Tensor):
-    token_probability = probabilities.repeat_interleave(BLOCK_LEN, dim=1)
+    if x0.shape[1] % probabilities.shape[1]:
+        raise ValueError("probability count must divide sequence length")
+    block_len = x0.shape[1] // probabilities.shape[1]
+    token_probability = probabilities.repeat_interleave(block_len, dim=1)
     masked = torch.rand(x0.shape, device=x0.device) < token_probability
     return x0.masked_fill(masked, MASK_ID), masked, token_probability

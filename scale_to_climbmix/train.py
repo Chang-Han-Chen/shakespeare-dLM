@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument("--lr", type=float, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--steps", type=int, default=None, help="Test/benchmark override")
+    parser.add_argument("--block-len", type=int, default=BLOCK_LEN)
     parser.add_argument("--device", default="cuda")
     return parser.parse_args()
 
@@ -115,13 +116,18 @@ def autocast_context(device: torch.device):
 
 
 @torch.inference_mode()
-def evaluate(model, dataset, device):
+def evaluate(model, dataset, device, block_len: int = BLOCK_LEN):
     model.eval()
     set_seed(SEED + 10_000)
     nelbo_values, ce_values = [], []
     for batch_index in range(EVAL_BATCHES):
         x0 = dataset.val_batch(batch_index, EVAL_BATCH_SIZE)
-        probability = stratified_mask_probabilities(EVAL_BATCH_SIZE, device, batch_index)
+        probability = stratified_mask_probabilities(
+            EVAL_BATCH_SIZE,
+            device,
+            batch_index,
+            block_len,
+        )
         xt, masked, token_probability = corrupt(x0, probability)
         with autocast_context(device):
             logits = model(xt, x0)
@@ -158,6 +164,8 @@ def atomic_json_dump(payload, path: Path) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.block_len < 1 or SEQ_LEN % args.block_len:
+        raise ValueError("block-len must be a positive divisor of sequence length")
     spec = MODEL_BY_LABEL[args.size]
     planned_steps = steps_for(args.budget, spec)
     if args.steps is None and not is_feasible(args.budget, spec):
@@ -184,7 +192,7 @@ def main() -> None:
     if EVAL_BATCHES * EVAL_BATCH_SIZE * SEQ_LEN > dataset.val.total_tokens:
         raise RuntimeError("Validation shard is too small")
 
-    model = BlockDiffusionTransformer(spec).to(device)
+    model = BlockDiffusionTransformer(spec, block_len=args.block_len).to(device)
     if model.counted_parameter_count() != spec.n_params:
         raise RuntimeError(
             f"Parameter mismatch: model={model.counted_parameter_count()}, "
@@ -203,7 +211,11 @@ def main() -> None:
             group["lr"] = lr
 
         x0 = dataset.train_batch(step, BATCH_SIZE)
-        probabilities = sample_mask_probabilities(BATCH_SIZE, device)
+        probabilities = sample_mask_probabilities(
+            BATCH_SIZE,
+            device,
+            args.block_len,
+        )
         xt, masked, token_probability = corrupt(x0, probabilities)
         with autocast_context(device):
             logits = model(xt, x0)
@@ -230,7 +242,12 @@ def main() -> None:
                 flush=True,
             )
 
-    val_nelbo, val_masked_ce = evaluate(model, dataset, device)
+    val_nelbo, val_masked_ce = evaluate(
+        model,
+        dataset,
+        device,
+        args.block_len,
+    )
     duration = time.monotonic() - started
     result = {
         "status": "complete",
@@ -242,7 +259,7 @@ def main() -> None:
         "n_head": spec.n_head,
         "head_dim": spec.head_dim,
         "d_ff": spec.d_ff,
-        "block_len": BLOCK_LEN,
+        "block_len": args.block_len,
         "sequence_length": SEQ_LEN,
         "batch_size": BATCH_SIZE,
         "steps": total_steps,

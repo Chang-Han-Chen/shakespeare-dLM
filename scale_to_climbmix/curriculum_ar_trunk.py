@@ -65,6 +65,12 @@ def parse_args():
         default=None,
         help="AR peak-LR override; defaults to the selected pure-BD LR",
     )
+    parser.add_argument(
+        "--p-ar",
+        type=float,
+        action="append",
+        help="Branch fractions for fixed-step mode; repeat as needed.",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--device", default="cuda")
     return parser.parse_args()
@@ -128,6 +134,11 @@ def evaluate_ar(model, dataset, device):
 
 def main() -> None:
     args = parse_args()
+    p_ar_values = tuple(args.p_ar) if args.p_ar else P_AR_VALUES
+    if any(not 0.0 < p_ar < 1.0 for p_ar in p_ar_values):
+        raise ValueError("all p-ar values must be strictly between zero and one")
+    if len(set(p_ar_values)) != len(p_ar_values):
+        raise ValueError("p-ar values must be unique")
     spec = MODEL_BY_LABEL[args.size]
     fixed_total_steps = args.total_steps is not None
     if not fixed_total_steps and args.budget not in COMPUTE_BUDGETS:
@@ -153,12 +164,12 @@ def main() -> None:
     if fixed_total_steps:
         p_ar_steps = {
             f"{p_ar:.1f}": round(p_ar * args.total_steps)
-            for p_ar in P_AR_VALUES
+            for p_ar in p_ar_values
         }
     else:
         p_ar_steps = {
             f"{p_ar:.1f}": phase_steps_for(args.budget, spec, p_ar)[0]
-            for p_ar in P_AR_VALUES
+            for p_ar in p_ar_values
         }
     branch_starts = {
         key: ar_decay_start(steps)
@@ -237,6 +248,7 @@ def main() -> None:
         "trunk_duration_seconds": trunk_duration,
         "trunk_seconds_per_step": trunk_duration / trunk_stop,
         "p_ar_steps": p_ar_steps,
+        "p_ar_values": list(p_ar_values),
         "fixed_total_steps": args.total_steps,
         "branch_starts": branch_starts,
         "checkpoints_by_step": checkpoints,

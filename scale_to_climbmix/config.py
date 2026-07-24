@@ -133,7 +133,13 @@ MODEL_SPECS = (
     ModelSpec("4M", n_layer=11, d_model=144, n_head=9),
     ModelSpec("8M", n_layer=12, d_model=208, n_head=13),
 )
-MODEL_BY_LABEL = {spec.label: spec for spec in MODEL_SPECS}
+# Experimental extension for the fixed-token block-size study. It is kept out
+# of MODEL_SPECS so the completed 1/2/4/8M IsoFLOP grid cannot silently grow.
+EXPERIMENTAL_MODEL_SPECS = (
+    ModelSpec("10M", n_layer=13, d_model=224, n_head=14),
+)
+ALL_MODEL_SPECS = MODEL_SPECS + EXPERIMENTAL_MODEL_SPECS
+MODEL_BY_LABEL = {spec.label: spec for spec in ALL_MODEL_SPECS}
 
 
 def steps_for(budget: float, spec: ModelSpec) -> int:
@@ -163,12 +169,12 @@ def lr_slug(lr: float) -> str:
 def validate_config() -> None:
     assert BASE_VOCAB_SIZE + 1 == VOCAB_SIZE
     assert SEQ_LEN % BLOCK_LEN == 0
-    assert len(set(spec.label for spec in MODEL_SPECS)) == len(MODEL_SPECS)
-    for spec in MODEL_SPECS:
+    assert len(set(spec.label for spec in ALL_MODEL_SPECS)) == len(ALL_MODEL_SPECS)
+    for spec in ALL_MODEL_SPECS:
         assert spec.n_layer >= 2
         assert spec.d_model % spec.n_head == 0
         assert spec.head_dim == 16
-    for left, right in zip(MODEL_SPECS, MODEL_SPECS[1:]):
+    for left, right in zip(ALL_MODEL_SPECS, ALL_MODEL_SPECS[1:]):
         assert left.n_params < right.n_params
     coverage = [
         sum(is_feasible(budget, spec) for spec in MODEL_SPECS)

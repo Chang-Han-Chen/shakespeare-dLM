@@ -209,6 +209,83 @@ AR-objective specialization as a real contributor, but the irregular winners
 across `p_ar` and the single training seed do not isolate classical
 train/validation overfitting.
 
+## Fixed-token comparison at D/N = 60
+
+A second targeted experiment removes the extra-update advantage from the
+fixed-FLOP curriculum comparison. Model size and total clean-token
+presentations are fixed within each panel, so every `p_ar` value receives the
+same total optimizer steps. The experiment uses the existing 0.4M and 0.8M
+models, compares block lengths 4 and 32, and sweeps
+
+```text
+p_ar = 0.0, 0.1, 0.3, 0.5, 0.7
+wd_AR = 0.1, 0.2, 0.4, 0.8
+```
+
+Pure BD is run once per `(block length, N)`. For mixed runs, BD weight decay remains
+0.1 and only AR weight decay changes. The inherited peak LRs are 3e-3 for
+0.4M and 1e-3 for 0.8M. Each phase retains its own 5%/80%/15% WSD schedule,
+and AdamW state is reset at transition.
+
+Whole-step rounding gives:
+
+| model | counted N | steps | realized D/N |
+|---:|---:|---:|---:|
+| 0.4M | 393,360 | 720 | 59.978 |
+| 0.8M | 781,920 | 1,432 | 60.011 |
+
+Each table entry below selects the best AR weight decay from the fixed grid.
+Gain is `pure-BD NELBO - curriculum NELBO`, so positive values favor the
+curriculum.
+
+### Block length 4
+
+| model | p_ar | best wd_AR | validation NELBO | gain |
+|---:|---:|---:|---:|---:|
+| 0.4M | 0.0 | — | 1.88757 | +0.00000 |
+| 0.4M | 0.1 | 0.1 | 1.85618 | +0.03139 |
+| 0.4M | 0.3 | 0.2 | 1.83971 | +0.04786 |
+| 0.4M | 0.5 | 0.2 | 1.83921 | +0.04836 |
+| 0.4M | 0.7 | 0.8 | 1.88940 | -0.00183 |
+| 0.8M | 0.0 | — | 1.65706 | +0.00000 |
+| 0.8M | 0.1 | 0.8 | 1.68336 | -0.02631 |
+| 0.8M | 0.3 | 0.2 | 1.68233 | -0.02528 |
+| 0.8M | 0.5 | 0.8 | 1.69994 | -0.04288 |
+| 0.8M | 0.7 | 0.4 | 1.75706 | -0.10001 |
+
+### Block length 32
+
+| model | p_ar | best wd_AR | validation NELBO | gain |
+|---:|---:|---:|---:|---:|
+| 0.4M | 0.0 | — | 1.99050 | +0.00000 |
+| 0.4M | 0.1 | 0.2 | 1.98346 | +0.00705 |
+| 0.4M | 0.3 | 0.2 | 1.99352 | -0.00302 |
+| 0.4M | 0.5 | 0.2 | 2.01292 | -0.02242 |
+| 0.4M | 0.7 | 0.1 | 2.10096 | -0.11046 |
+| 0.8M | 0.0 | — | 1.81148 | +0.00000 |
+| 0.8M | 0.1 | 0.2 | 1.82859 | -0.01711 |
+| 0.8M | 0.3 | 0.2 | 1.83468 | -0.02320 |
+| 0.8M | 0.5 | 0.8 | 1.86854 | -0.05706 |
+| 0.8M | 0.7 | 0.8 | 1.94921 | -0.13773 |
+
+Curriculum therefore does not help both model sizes. With block length 4,
+the 0.4M model improves by 0.04836 at `p_ar=0.5`, but every nonzero
+curriculum fraction hurts the 0.8M model. Increasing the block length to 32
+nearly removes the small-model effect: 0.4M improves by only 0.00705 at
+`p_ar=0.1`, while all larger fractions hurt. Every nonzero fraction again
+hurts 0.8M.
+
+The selected weight decays are nonmonotone and come from one seed on a fixed
+finite grid; they should be treated as nuisance-parameter tuning rather than
+a scaling law for regularization.
+
+Outputs:
+
+- `results_fixed_dn60/` and `results_fixed_dn60_bl32/`: all runs and summaries;
+- `figures_fixed_ratio/fixed_dn60_bl{4,32}_ar_wd.{png,pdf}`: individual sweeps;
+- `figures_fixed_ratio/compare_bl4_bl32_dn60.{png,pdf}`: direct gain comparison;
+- `results_fixed_dn60_block_comparison.{csv,json}`: combined selected points.
+
 ## Measured AR versus BD step time
 
 The compute formula counts leading matmul FLOPs, but the very small models do

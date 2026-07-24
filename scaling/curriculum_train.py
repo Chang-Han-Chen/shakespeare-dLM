@@ -25,7 +25,6 @@ from config import (
 )
 from curriculum_config import (
     COMPUTE_ACCOUNTING,
-    P_AR_VALUES,
     average_training_flops_per_clean_token,
     is_feasible,
     realized_flops,
@@ -49,7 +48,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--budget", type=float, required=True)
     parser.add_argument("--size", choices=tuple(MODEL_BY_LABEL), required=True)
-    parser.add_argument("--p-ar", type=float, choices=P_AR_VALUES, required=True)
+    parser.add_argument("--p-ar", type=float, required=True)
     parser.add_argument("--lr", type=float, required=True)
     parser.add_argument("--lr-source", default="unspecified")
     parser.add_argument(
@@ -72,6 +71,7 @@ def parse_args():
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--steps", type=int, default=None, help="Test-only override")
+    parser.add_argument("--block-len", type=int, default=BLOCK_LEN)
     parser.add_argument("--device", default="cuda")
     return parser.parse_args()
 
@@ -95,9 +95,9 @@ def train_ar_step(model, optimizer, dataset, device):
     return float(loss.item()), float(grad_norm)
 
 
-def train_bd_step(model, optimizer, dataset, device):
+def train_bd_step(model, optimizer, dataset, device, block_len):
     x0 = dataset.batch("train", BATCH_SIZE)
-    probabilities = sample_mask_probabilities(BATCH_SIZE, device)
+    probabilities = sample_mask_probabilities(BATCH_SIZE, device, block_len)
     xt, masked, token_probability = corrupt(x0, probabilities)
     with autocast_context(device):
         logits = model(xt, x0)
@@ -121,8 +121,19 @@ def run_phase(
     warmup_fraction,
     global_offset,
     trace,
+    block_len=BLOCK_LEN,
 ):
-    train_step = train_ar_step if phase == "ar" else train_bd_step
+    train_step = (
+        train_ar_step
+        if phase == "ar"
+        else lambda model, optimizer, dataset, device: train_bd_step(
+            model,
+            optimizer,
+            dataset,
+            device,
+            block_len,
+        )
+    )
     log_interval = max(1, phase_steps // 10)
     trace_interval = max(1, phase_steps // 100)
     last_loss = math.nan
@@ -178,6 +189,10 @@ def run_phase(
 
 def main() -> None:
     args = parse_args()
+    if not 0.0 < args.p_ar < 1.0:
+        raise ValueError("curriculum p_ar must be strictly between zero and one")
+    if args.block_len < 1 or SEQ_LEN % args.block_len:
+        raise ValueError("block-len must be a positive divisor of sequence length")
     if args.ar_weight_decay < 0 or args.bd_weight_decay < 0:
         raise ValueError("weight decay must be non-negative")
     spec = MODEL_BY_LABEL[args.size]
@@ -196,7 +211,7 @@ def main() -> None:
 
     set_seed(SEED)
     dataset = ShakespeareData.load(device)
-    model = BlockDiffusionTransformer(spec).to(device)
+    model = BlockDiffusionTransformer(spec, block_len=args.block_len).to(device)
     if model.counted_parameter_count() != spec.n_params:
         raise RuntimeError(
             f"Parameter mismatch: model={model.counted_parameter_count()}, config={spec.n_params}"
@@ -217,6 +232,7 @@ def main() -> None:
         warmup_fraction=WARMUP_FRACTION,
         global_offset=0,
         trace=trace,
+        block_len=args.block_len,
     )
 
     # Deliberately discard both Adam moments and step counters at the
@@ -238,9 +254,15 @@ def main() -> None:
         warmup_fraction=args.bd_warmup_fraction,
         global_offset=ar_steps,
         trace=trace,
+        block_len=args.block_len,
     )
 
-    val_nelbo, val_masked_ce = evaluate(model, dataset, device)
+    val_nelbo, val_masked_ce = evaluate(
+        model,
+        dataset,
+        device,
+        args.block_len,
+    )
     duration = time.monotonic() - started
     exact_flops = realized_flops(total_steps, spec, args.p_ar)
     realized_p_ar = ar_steps / total_steps
@@ -254,7 +276,7 @@ def main() -> None:
         "n_head": spec.n_head,
         "head_dim": spec.head_dim,
         "d_ff": spec.d_ff,
-        "block_len": BLOCK_LEN,
+        "block_len": args.block_len,
         "sequence_length": SEQ_LEN,
         "batch_size": BATCH_SIZE,
         "steps": total_steps,

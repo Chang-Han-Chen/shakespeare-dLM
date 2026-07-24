@@ -16,6 +16,7 @@ from config import (
     MASK_ID,
     MAX_STEPS,
     MIN_STEPS,
+    MODEL_BY_LABEL,
     MODEL_SPECS,
     VOCAB_SIZE,
     is_feasible,
@@ -57,6 +58,12 @@ class ConfigTests(unittest.TestCase):
         for spec in MODEL_SPECS:
             self.assertGreaterEqual(spec.n_layer, 2)
             self.assertEqual(spec.head_dim, 16)
+
+    def test_experimental_10m_configuration(self):
+        spec = MODEL_BY_LABEL["10M"]
+        self.assertEqual(spec.n_params, 9_692_032)
+        self.assertEqual((spec.n_layer, spec.d_model, spec.n_head), (13, 224, 14))
+        self.assertEqual(spec.head_dim, 16)
 
     def test_feasible_coverage(self):
         expected = [5, 7, 6, 4, 3]
@@ -146,6 +153,9 @@ class ModelTests(unittest.TestCase):
         for spec in MODEL_SPECS:
             model = BlockDiffusionTransformer(spec)
             self.assertEqual(model.counted_parameter_count(), spec.n_params)
+        experimental = MODEL_BY_LABEL["10M"]
+        model = BlockDiffusionTransformer(experimental)
+        self.assertEqual(model.counted_parameter_count(), experimental.n_params)
 
     def test_forward_backward_and_mask_target_exclusion(self):
         model = BlockDiffusionTransformer(MODEL_SPECS[0])
@@ -154,6 +164,16 @@ class ModelTests(unittest.TestCase):
         noisy, masked, token_probability = corrupt(clean, probabilities)
         logits = model(noisy, clean)
         self.assertEqual(tuple(logits.shape), (2, 256, VOCAB_SIZE))
+        loss = diffusion_nelbo(logits, clean, masked, token_probability)
+        loss.backward()
+        self.assertTrue(torch.isfinite(loss))
+
+    def test_block_32_forward_backward(self):
+        model = BlockDiffusionTransformer(MODEL_SPECS[0], block_len=32)
+        clean = torch.randint(0, MASK_ID, (2, 256))
+        probabilities = torch.full((2, 8), 0.5)
+        noisy, masked, token_probability = corrupt(clean, probabilities)
+        logits = model(noisy, clean)
         loss = diffusion_nelbo(logits, clean, masked, token_probability)
         loss.backward()
         self.assertTrue(torch.isfinite(loss))

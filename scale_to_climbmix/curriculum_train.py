@@ -22,7 +22,6 @@ from config import (
 )
 from curriculum_ar_trunk import ar_loss, set_lr
 from curriculum_config import (
-    P_AR_VALUES,
     ar_decay_start,
     ar_decay_steps,
     is_feasible,
@@ -46,7 +45,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--budget", type=float, required=True)
     parser.add_argument("--size", choices=tuple(MODEL_BY_LABEL), required=True)
-    parser.add_argument("--p-ar", type=float, choices=P_AR_VALUES, required=True)
+    parser.add_argument("--p-ar", type=float, required=True)
     parser.add_argument(
         "--total-steps",
         type=int,
@@ -66,12 +65,17 @@ def parse_args():
         action="store_true",
         help="Hold the AR LR at its peak through the final 15 percent",
     )
+    parser.add_argument("--block-len", type=int, default=BLOCK_LEN)
     parser.add_argument("--device", default="cuda")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if not 0.0 < args.p_ar < 1.0:
+        raise ValueError("p-ar must be strictly between zero and one")
+    if args.block_len < 1 or SEQ_LEN % args.block_len:
+        raise ValueError("block-len must be a positive divisor of sequence length")
     spec = MODEL_BY_LABEL[args.size]
     fixed_total_steps = args.total_steps is not None
     if fixed_total_steps:
@@ -101,7 +105,7 @@ def main() -> None:
     total_steps = ar_steps + bd_steps
     if total_steps * TOKENS_PER_STEP + 1 > dataset.train.total_tokens:
         raise RuntimeError("Curriculum run would exceed one data epoch")
-    model = BlockDiffusionTransformer(spec).to(device)
+    model = BlockDiffusionTransformer(spec, block_len=args.block_len).to(device)
     ar_optimizer = optimizer_for(model, ar_peak_lr)
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model"])
@@ -149,7 +153,11 @@ def main() -> None:
         learning_rate = wsd_learning_rate(local_step, bd_steps, bd_peak_lr)
         set_lr(bd_optimizer, learning_rate)
         x0 = dataset.train_batch(ar_steps + local_step, BATCH_SIZE)
-        probabilities = sample_mask_probabilities(BATCH_SIZE, device)
+        probabilities = sample_mask_probabilities(
+            BATCH_SIZE,
+            device,
+            args.block_len,
+        )
         xt, masked, token_probability = corrupt(x0, probabilities)
         with autocast_context(device):
             logits = model(xt, x0)
@@ -179,7 +187,12 @@ def main() -> None:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     bd_duration = time.monotonic() - bd_started
-    val_nelbo, val_masked_ce = evaluate(model, dataset, device)
+    val_nelbo, val_masked_ce = evaluate(
+        model,
+        dataset,
+        device,
+        args.block_len,
+    )
 
     payload = {
         "status": "complete",
@@ -202,7 +215,7 @@ def main() -> None:
         "bd_steps": bd_steps,
         "total_steps": total_steps,
         "sequence_length": SEQ_LEN,
-        "block_len": BLOCK_LEN,
+        "block_len": args.block_len,
         "batch_size": BATCH_SIZE,
         "clean_tokens": total_steps * TOKENS_PER_STEP,
         "effective_train_epochs": (

@@ -117,9 +117,12 @@ class TransformerBlock(nn.Module):
 
 
 class BlockDiffusionTransformer(nn.Module):
-    def __init__(self, spec: ModelSpec):
+    def __init__(self, spec: ModelSpec, block_len: int = BLOCK_LEN):
         super().__init__()
+        if SEQ_LEN % block_len:
+            raise ValueError("block_len must divide sequence length")
         self.spec = spec
+        self.block_len = block_len
         self.token_embedding = nn.Embedding(VOCAB_SIZE, spec.d_model)
         self.layers = nn.ModuleList([TransformerBlock(spec) for _ in range(spec.n_layer)])
         self.norm = RMSNorm(spec.d_model)
@@ -128,7 +131,11 @@ class BlockDiffusionTransformer(nn.Module):
         cos, sin = rotary_frequencies(SEQ_LEN, spec.head_dim)
         self.register_buffer("cos", torch.cat((cos, cos), dim=2), persistent=False)
         self.register_buffer("sin", torch.cat((sin, sin), dim=2), persistent=False)
-        self.register_buffer("attention_mask", make_dual_stream_mask(), persistent=False)
+        self.register_buffer(
+            "attention_mask",
+            make_dual_stream_mask(block_len=block_len),
+            persistent=False,
+        )
         self.apply(self._initialize)
 
     @staticmethod

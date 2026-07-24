@@ -35,11 +35,16 @@ learned norms are included.
 | 2M | 7 | 112 | 7 | 16 | 304 | 1,985,536 |
 | 4M | 11 | 144 | 9 | 16 | 384 | 3,920,256 |
 | 8M | 12 | 208 | 13 | 16 | 560 | 7,979,296 |
+| 10M* | 13 | 224 | 14 | 16 | 600 | 9,692,032 |
 
 The sub-0.5M points were added adaptively after the first completed profiles
 showed that the low-compute minima were below 0.5M. They are the two smallest
 valid head-dimension-16 configurations and are run only where they satisfy the
 step limits. The requested 1/2/4/8M grid is otherwise unchanged.
+
+`10M*` is an experimental extension used only for the fixed-`D/N=40`
+block-length comparison; it is not added retroactively to the completed
+IsoFLOP grid.
 
 ## Objective and compute
 
@@ -245,3 +250,33 @@ Curriculum outputs:
 - `results_curriculum/phase_timing.csv`: per-point AR and BD step times.
 - `results_curriculum/pure_ar_runs.csv`: all 25 pure-AR endpoint losses,
   timings, token counts, and epoch counts.
+
+## 10M fixed-token block-length follow-up
+
+A separate matched-step experiment extends the model table to the
+experimental 10M configuration and fixes `D/N=40`:
+
+```text
+N = 9,692,032
+D = 387,678,208 clean tokens
+steps = 23,662
+p_AR = 0.0, 0.1, 0.3, 0.5, 0.7
+block length = 4, 32
+peak LR = 9e-4
+weight decay = 0.1
+```
+
+The two block-length sweeps use identical total steps and clean tokens.
+Curriculum branches reuse one shared AR trunk, reset AdamW at transition, and
+give the BD phase a fresh 5%/80%/15% WSD schedule. The AR prefix is
+block-independent; only the BD phase and validation mask use the selected
+block length.
+
+```bash
+python scale_to_climbmix/run_fixed_dn40_10m_blocks.py --dry-run
+python scale_to_climbmix/run_fixed_dn40_10m_blocks.py --workers 4
+python scale_to_climbmix/analyze_fixed_dn40_10m_blocks.py
+```
+
+Runs live in `results_fixed_dn40_10M/`. The final comparison is written to
+`figures_fixed_dn40_10M/fixed_dn40_10M_blocks.{png,pdf}`.
