@@ -10,14 +10,26 @@
     "selected_bd_lr": 0.0081
   },
   "1e14/0.35M": {
-    "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
-    "selected_ar_lr": 0.0027,
-    "selected_bd_lr": 0.0027
+    "incumbent_ar_lr": 0.0027,
+    "incumbent_bd_lr": 0.0027,
+    "policy": "bridge probe improved validation NELBO by at least 1%; accept",
+    "probe_ar_lr": 0.0081,
+    "probe_bd_lr": 0.0081,
+    "relative_improvement": 0.020759592102579497,
+    "selected_ar_lr": 0.0081,
+    "selected_bd_lr": 0.0081,
+    "threshold": 0.01
   },
   "1e14/0.45M": {
-    "policy": "initial prior-informed upper neighbor; inherit phase LRs by model size",
+    "incumbent_ar_lr": 0.0027,
+    "incumbent_bd_lr": 0.0027,
+    "policy": "bridge probe was worse; retain incumbent",
+    "probe_ar_lr": 0.0081,
+    "probe_bd_lr": 0.0081,
+    "relative_improvement": -0.01004218682151427,
     "selected_ar_lr": 0.0027,
-    "selected_bd_lr": 0.0027
+    "selected_bd_lr": 0.0027,
+    "threshold": 0.01
   },
   "3e14/0.29M": {
     "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
@@ -25,9 +37,9 @@
     "selected_bd_lr": 0.0081
   },
   "3e14/0.35M": {
-    "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
-    "selected_ar_lr": 0.0027,
-    "selected_bd_lr": 0.0027
+    "policy": "propagate the accepted 0.35M matched-step bridge LR by model size",
+    "selected_ar_lr": 0.0081,
+    "selected_bd_lr": 0.0081
   },
   "3e14/0.45M": {
     "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
@@ -36,6 +48,11 @@
   },
   "3e14/0.5M": {
     "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
+    "selected_ar_lr": 0.0027,
+    "selected_bd_lr": 0.0027
+  },
+  "3e14/0.73M": {
+    "policy": "sqrt-compute forecast upper neighbor; inherit the selected 0.45M model-size LR",
     "selected_ar_lr": 0.0027,
     "selected_bd_lr": 0.0027
   },
@@ -59,6 +76,11 @@
     "selected_ar_lr": 0.0027,
     "selected_bd_lr": 0.0027
   },
+  "3e15/0.5M": {
+    "policy": "adaptive lower extension after the measured minimum reached the initial boundary",
+    "selected_ar_lr": 0.0027,
+    "selected_bd_lr": 0.0027
+  },
   "3e15/0.73M": {
     "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
     "selected_ar_lr": 0.0027,
@@ -76,6 +98,11 @@
   },
   "3e15/1.56M": {
     "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
+    "selected_ar_lr": 0.0027,
+    "selected_bd_lr": 0.0027
+  },
+  "3e15/2M": {
+    "policy": "rolling-law upper neighbor; retain 2.7e-3 because existing isolated phase probes changed validation loss by less than 1%",
     "selected_ar_lr": 0.0027,
     "selected_bd_lr": 0.0027
   },
