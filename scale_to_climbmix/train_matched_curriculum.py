@@ -168,6 +168,20 @@ def main() -> None:
                 "bd_attention_backend": args.bd_attention_backend,
                 "nominal_compute_accounting": COMPUTE_ACCOUNTING,
                 "ar_compute_accounting": "triangular_flash_causal_v2",
+                "nominal_pure_bd_flops": (
+                    total_steps
+                    * tokens_per_step
+                    * spec.training_flops_per_clean_token
+                ),
+                "planned_realized_flops": (
+                    tokens_per_step
+                    * (
+                        ar_steps
+                        * spec.flash_causal_training_flops_per_clean_token
+                        + bd_steps
+                        * spec.training_flops_per_clean_token
+                    )
+                ),
             },
         )
 
@@ -229,6 +243,7 @@ def main() -> None:
                             "train/learning_rate": learning_rate,
                             "train/grad_norm": float(grad_norm),
                             "train/phase": 0,
+                            "train/clean_tokens": completed * tokens_per_step,
                         },
                         step=completed,
                     )
@@ -299,6 +314,7 @@ def main() -> None:
                             "train/learning_rate": learning_rate,
                             "train/grad_norm": float(grad_norm),
                             "train/phase": 1,
+                            "train/clean_tokens": global_step * tokens_per_step,
                         },
                         step=global_step,
                     )
@@ -365,6 +381,20 @@ def main() -> None:
         "accounted_h100_bf16_mfu": (
             realized_flops / (ar_duration + bd_duration) / 989e12
         ),
+        "ar_accounted_h100_bf16_mfu": (
+            ar_steps
+            * tokens_per_step
+            * spec.flash_causal_training_flops_per_clean_token
+            / ar_duration
+            / 989e12
+        ),
+        "bd_accounted_h100_bf16_mfu": (
+            bd_steps
+            * tokens_per_step
+            * spec.training_flops_per_clean_token
+            / bd_duration
+            / 989e12
+        ),
         "nominal_compute_accounting": COMPUTE_ACCOUNTING,
         "ar_compute_accounting": "triangular_flash_causal_v2",
         "flash_causal_training_flops_per_clean_token": (
@@ -405,6 +435,12 @@ def main() -> None:
                 ),
                 "train/accounted_h100_bf16_mfu": (
                     result["accounted_h100_bf16_mfu"]
+                ),
+                "train/ar_accounted_h100_bf16_mfu": (
+                    result["ar_accounted_h100_bf16_mfu"]
+                ),
+                "train/bd_accounted_h100_bf16_mfu": (
+                    result["bd_accounted_h100_bf16_mfu"]
                 ),
                 "result_path": str(args.output),
             }

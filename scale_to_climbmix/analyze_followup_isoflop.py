@@ -296,6 +296,10 @@ def main() -> None:
     selected, all_rows = load_rows(study)
     profiles = fit_profiles(selected, study)
     laws = fit_laws(profiles)
+    forecast_path = results / "forecast_history.json"
+    forecast_history = (
+        load_json(forecast_path) if forecast_path.exists() else []
+    )
     results.mkdir(parents=True, exist_ok=True)
     write_csv(results / "all_runs.csv", all_rows)
     write_csv(results / "best_runs.csv", selected)
@@ -305,6 +309,7 @@ def main() -> None:
         "loss_metric": study["loss"],
         "profiles": profiles,
         "laws": laws,
+        "forecast_history": forecast_history,
         "n_selected_runs": len(selected),
         "n_total_runs": len(all_rows),
     }

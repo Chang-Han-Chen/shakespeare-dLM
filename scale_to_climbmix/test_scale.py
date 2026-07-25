@@ -23,6 +23,7 @@ from config import (
     MODEL_BY_LABEL,
     MODEL_SPECS,
     REFINEMENT_MODEL_SPECS,
+    SEQ_LEN,
     VOCAB_SIZE,
     is_feasible,
     steps_for,
@@ -165,8 +166,18 @@ class ConfigTests(unittest.TestCase):
         )
         for spec in MODEL_SPECS:
             self.assertLess(
-                spec.autoregressive_training_flops_per_clean_token,
+                spec.flash_causal_training_flops_per_clean_token,
                 spec.training_flops_per_clean_token,
+            )
+            self.assertEqual(
+                (
+                    spec.autoregressive_training_flops_per_clean_token
+                    - spec.flash_causal_training_flops_per_clean_token
+                ),
+                6
+                * (SEQ_LEN - 1)
+                * spec.n_layer
+                * spec.d_model,
             )
 
     def test_refinement_profiles_use_immediate_neighbors(self):

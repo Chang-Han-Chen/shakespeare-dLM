@@ -1,6 +1,16 @@
 {
+  "1e14/0.29M": {
+    "policy": "reuse the tuned small-model AR LR",
+    "selected_lr": 0.0081
+  },
+  "1e14/0.35M": {
+    "policy": "same local model-size neighborhood as the 0.5M diagnostic",
+    "selected_lr": 0.0027
+  },
   "1e14/0.5M": {
-    "policy": "retained AR LR from the 0.5M diagnostic",
+    "higher_lr": 0.0081,
+    "higher_lr_relative_improvement": 0.0016660374546679647,
+    "policy": "batch-128 higher-LR probe improved below 1%; retain incumbent",
     "selected_lr": 0.0027
   },
   "1e14/0.73M": {
@@ -13,6 +23,199 @@
   },
   "1e14/1.20M": {
     "policy": "same local model-size neighborhood",
+    "selected_lr": 0.0027
+  },
+  "3e14/0.73M": {
+    "policy": "propagate the selected 0.5M AR LR",
+    "selected_lr": 0.0027
+  },
+  "3e14/1M": {
+    "higher_lr": 0.0081,
+    "higher_lr_relative_improvement": -0.000963759622634361,
+    "policy": "batch-128 higher-LR probe was worse; retain incumbent",
+    "selected_lr": 0.0027
+  },
+  "3e14/0.5M": {
+    "policy": "reuse the selected 0.5M AR LR",
+    "selected_lr": 0.0027
+  },
+  "3e14/1.20M": {
+    "policy": "same local model-size neighborhood",
+    "selected_lr": 0.0027
+  },
+  "3e14/1.56M": {
+    "policy": "same local model-size neighborhood",
+    "selected_lr": 0.0027
+  },
+  "3e14/2M": {
+    "policy": "same local model-size neighborhood",
+    "selected_lr": 0.0027
+  },
+  "1e15/1.20M": {
+    "policy": "rolling-law neighborhood below the 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e15/1.56M": {
+    "higher_lr": 0.0081,
+    "higher_lr_relative_improvement": 0.009200162624669812,
+    "policy": "batch-128 higher-LR probe improved below 1%; retain incumbent",
+    "selected_lr": 0.0027
+  },
+  "1e15/1M": {
+    "policy": "rolling-law lower neighbor",
+    "selected_lr": 0.0027
+  },
+  "1e15/2M": {
+    "higher_lr": 0.0081,
+    "higher_lr_relative_improvement": 0.010479793517871544,
+    "policy": "batch-128 higher-LR probe improved by at least 1%; accept",
+    "selected_lr": 0.0081,
+    "threshold": 0.01
+  },
+  "1e15/2.60M": {
+    "higher_lr": 0.0081,
+    "higher_lr_relative_improvement": -0.031099733746272794,
+    "policy": "higher LR was worse at this model size; retain 2.7e-3",
+    "selected_lr": 0.0027,
+    "threshold": 0.01
+  },
+  "1e15/3.4M": {
+    "higher_lr": 0.0081,
+    "higher_lr_relative_improvement": -0.042707511136503236,
+    "policy": "higher LR was worse at this model size; retain 2.7e-3",
+    "selected_lr": 0.0027
+  },
+  "1e15/4M": {
+    "higher_lr": 0.0081,
+    "higher_lr_relative_improvement": -0.03809119833741802,
+    "policy": "higher LR was worse at this model size; retain 2.7e-3",
+    "selected_lr": 0.0027
+  },
+  "1e15/5.6M": {
+    "policy": "no selected run; high-LR diagnostic only",
+    "selected_lr": 0.0027
+  },
+  "3e15/2.60M": {
+    "policy": "rolling-law lower neighbor; use locally selected LR",
+    "selected_lr": 0.0027
+  },
+  "3e15/3.4M": {
+    "policy": "rolling-law predicted neighborhood; use locally selected LR",
+    "selected_lr": 0.0027
+  },
+  "3e15/4.4M": {
+    "policy": "rolling-law predicted neighborhood; use locally selected LR",
+    "selected_lr": 0.0027
+  },
+  "3e15/5.6M": {
+    "policy": "rolling-law upper neighbor; use locally selected LR",
+    "selected_lr": 0.0027
+  },
+  "1e16/5.6M": {
+    "policy": "rolling-law lower neighbor; below 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e16/6.9M": {
+    "policy": "rolling-law predicted neighborhood; below 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e16/8.5M": {
+    "policy": "rolling-law predicted neighborhood; below 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e16/10.3M": {
+    "policy": "rolling-law upper neighbor; below 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "3e16/12.3M": {
+    "policy": "rolling-law lower neighbor pending 19.1M LR probe",
+    "selected_lr": 0.0027
+  },
+  "3e16/15.5M": {
+    "policy": "rolling-law predicted neighborhood pending 19.1M LR probe",
+    "selected_lr": 0.0027
+  },
+  "3e16/8.5M": {
+    "policy": "adaptive lower extension after boundary winner",
+    "selected_lr": 0.0027
+  },
+  "3e16/10.3M": {
+    "policy": "adaptive immediate lower neighbor after boundary winner",
+    "selected_lr": 0.0027
+  },
+  "3e16/19.1M": {
+    "lower_lr": 0.0009,
+    "lower_lr_relative_improvement": -0.0036174572354193964,
+    "policy": "3x lower LR after greater than 4x model growth; reject below 1%",
+    "selected_lr": 0.0027,
+    "threshold": 0.01
+  },
+  "1e17/19.1M": {
+    "policy": "provisional rolling-law lower neighbor; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e17/24.3M": {
+    "policy": "provisional rolling-law predicted neighborhood; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e17/28.1M": {
+    "policy": "updated rolling-law predicted neighborhood; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e17/35.3M": {
+    "policy": "updated rolling-law upper neighbor; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "1e17/12.3M": {
+    "policy": "adaptive second lower extension after provisional boundary winner",
+    "selected_lr": 0.0027
+  },
+  "1e17/15.5M": {
+    "policy": "adaptive immediate lower extension after provisional boundary winner",
+    "selected_lr": 0.0027
+  },
+  "3e17/28.1M": {
+    "policy": "provisional rolling-law lower neighborhood; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "3e17/35.3M": {
+    "policy": "provisional rolling-law predicted neighborhood; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "3e17/43.7M": {
+    "policy": "updated rolling-law upper neighbor; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "3e17/54.5M": {
+    "policy": "updated rolling-law second upper neighbor; below next 4x LR trigger",
+    "selected_lr": 0.0027
+  },
+  "3e17/19.1M": {
+    "policy": "adaptive second lower extension after provisional boundary winner",
+    "selected_lr": 0.0027
+  },
+  "3e17/24.3M": {
+    "policy": "adaptive immediate lower extension after provisional boundary winner",
+    "selected_lr": 0.0027
+  },
+  "3e17/68.5M": {
+    "policy": "adaptive immediate upper extension after 54.5M boundary winner",
+    "selected_lr": 0.0027
+  },
+  "1e18/68.5M": {
+    "policy": "provisional lower neighborhood while final 3e17 bracket completes",
+    "selected_lr": 0.0027
+  },
+  "1e18/85.8M": {
+    "policy": "updated rolling-law lower neighbor; pending paired lower-LR probe",
+    "selected_lr": 0.0027
+  },
+  "1e18/107.7M": {
+    "policy": "updated rolling-law upper neighbor; pending 85.8M paired lower-LR decision",
+    "selected_lr": 0.0027
+  },
+  "1e18/134.8M": {
+    "policy": "planned second upper neighbor; pending 85.8M paired lower-LR decision",
     "selected_lr": 0.0027
   }
 }

@@ -357,52 +357,57 @@ and changing the implementation midway through the study.
 
 ## 7. Pure-BD scale-up through 1e18
 
-The batch-128 extension is complete through \(3\cdot10^{17}\) FLOPs; the
-final \(10^{18}\)-FLOP wave is running. Forecasting uses the five
-highest-compute bracketed optima, and every new profile is fitted only after
-the measured minimum has both an immediate lower and upper neighbor.
+The batch-128 extension is complete through \(10^{18}\) FLOPs. Forecasting
+uses the five highest-compute bracketed optima, and every new profile is
+fitted only after the measured minimum has both an immediate lower and upper
+neighbor.
 
 | FLOPs | forecast \(N\) | fitted \(N\) | fitted \(D\) | \(D/N\) | fitted NELBO |
 |---:|---:|---:|---:|---:|---:|
 | \(3\cdot10^{16}\) | 4.303M | 4.416M | 0.463B | 104.9 | 4.14035 |
 | \(10^{17}\) | 8.346M | 9.338M | 0.729B | 78.1 | 3.88064 |
 | \(3\cdot10^{17}\) | 15.536M | 13.087M | 1.568B | 119.8 | 3.66372 |
-| \(10^{18}\) | 28.229M | running | running | running | running |
+| \(10^{18}\) | 28.229M | 24.501M | 2.793B | 114.0 | 3.44915 |
 
 The first two forecasts missed the fitted vertex by -2.6% and -10.6% while
 remaining inside their initial neighborhoods. The \(3\cdot10^{17}\) forecast
 overshot by 18.7%, and the initial four-size profile was still descending at
 12.3M. Parallel 10.3M and 8.5M extensions then bracketed the minimum. Its
-local quadratic uses 10.3M/12.3M/15.5M and has a 13.087M vertex. This is the
-important success criterion for the adaptive design: a missed forecast
-triggers more measurement instead of an edge extrapolation.
+local quadratic uses 10.3M/12.3M/15.5M and has a 13.087M vertex. At
+\(10^{18}\), the forecast overshot by 15.2% but remained within one model-size
+grid step of the fitted optimum. Across the four scale-up budgets the median
+absolute forecast error is 12.9%. This is the important success criterion for
+the adaptive design: the forecast centers an efficient neighborhood, while a
+miss triggers more measurement instead of an edge extrapolation.
 
-Through \(3\cdot10^{17}\), the rolling highest-five allocation laws are
+Through \(10^{18}\), the rolling highest-five allocation laws are
 
 ```text
-N_opt(C) = 8.23M * (C / 1e17)^0.535
-D_opt(C) = 0.829B * (C / 1e17)^0.436.
+N_opt(C) = 7.73M * (C / 1e17)^0.532
+D_opt(C) = 0.890B * (C / 1e17)^0.462.
 ```
 
-The three batch-128 points alone give exponents 0.474 and 0.527,
-respectively, much closer to symmetric square-root allocation. The all-budget
-sensitivities are 0.518 and 0.423. These high-scale results support the
-direction of the square-root hypothesis, although only three batch-128
-profiles are complete and \(D/N\) remains visibly noisy.
+The four batch-128 points alone give exponents 0.472 and 0.529,
+respectively, close to symmetric square-root allocation. The all-budget
+sensitivities are 0.509 and 0.437. These high-scale results support the
+direction of the square-root hypothesis, although \(D/N\) remains visibly
+noisy.
 
 The higher-LR batch-transition probe (`2.7e-3`) was 0.99% worse than `9e-4`,
 and the \(10^{17}\) lower-LR probe (`3e-4`) was 1.99% worse. Both were
 rejected under the preregistered 1% validation threshold. No probe was
-triggered at \(3\cdot10^{17}\). The final wave runs 22.3M/28.1M/35.3M at
-`9e-4` and a 28.1M `3e-4` probe; if the latter wins by at least 1%, the outer
-sizes will be repeated at the accepted LR.
+triggered at \(3\cdot10^{17}\). At \(10^{18}\), the 28.1M `3e-4` probe
+improved validation NELBO by only 0.49%, so `9e-4` remained selected and no
+outer sizes were repeated. The final locally fitted support is
+22.3M/24.3M/28.1M.
 
 Four independent one-GPU jobs remain the latency-optimal schedule. The
 four-way DDP smoke test achieved only 230k aggregate clean tokens/s because
 global batch 128 becomes local batch 32, versus 349k for the comparable cold
 single-GPU run and 603k for a cache-warm long run. Accounted one-GPU MFU
 improves with size: 5.9–6.7% at \(3\cdot10^{16}\), 8.0–8.8% at
-\(10^{17}\), and 9.6–11.4% at \(3\cdot10^{17}\).
+\(10^{17}\), 9.6–11.4% at \(3\cdot10^{17}\), and 9.6–12.6% at
+\(10^{18}\).
 
 ![Scale-up IsoFLOP analysis](figures_scaleup/isoflop_scaling_to_1e18.png)
 
@@ -436,11 +441,41 @@ high-five law remains the primary extrapolator.
 The new scale follow-ups deliberately supersede the old batch-64 curriculum
 endpoints as scaling-law measurements. Pure AR uses batch 128 at all nine
 budgets, exact triangular causal FlashAttention accounting, and a `D/N=20`
-initial anchor with adaptive approximately 1.25x neighbors. After that curve
-is complete, a separate batch-128 `p_AR=0.4` study holds pure-BD steps and
-tokens fixed, resets AdamW at the transition, and reports both nominal
-pure-BD-equivalent and realized mixed FLOPs. The preregistered neighborhoods
-and model-growth-triggered 3x LR checks are in
+initial anchor with adaptive approximately 1.25x neighbors. It is complete
+through \(3\cdot10^{17}\):
+
+| FLOPs | fitted \(N\) | fitted \(D\) | \(D/N\) | fitted AR CE |
+|---:|---:|---:|---:|---:|
+| \(10^{14}\) | 0.539M | 0.028B | 52.3 | 4.88884 |
+| \(3\cdot10^{14}\) | 0.874M | 0.053B | 60.2 | 4.55691 |
+| \(10^{15}\) | 1.885M | 0.080B | 42.6 | 4.17734 |
+| \(3\cdot10^{15}\) | 3.551M | 0.128B | 36.2 | 3.84976 |
+| \(10^{16}\) | 7.748M | 0.199B | 25.6 | 3.56870 |
+| \(3\cdot10^{16}\) | 12.559M | 0.371B | 29.5 | 3.37249 |
+| \(10^{17}\) | 19.831M | 0.787B | 39.7 | 3.17593 |
+| \(3\cdot10^{17}\) | 52.042M | 0.913B | 17.5 | 3.01530 |
+
+The rolling law did not accurately predict every vertex: in particular, its
+\(3\cdot10^{17}\) seed was near 35M. The boundary check triggered upper
+extensions and localized the minimum with 43.7M/54.5M/68.5M support. Thus the
+strategy is effective as an adaptive search but only moderately accurate as
+a point predictor. The profile is also shallow: the 43.7M and 54.5M losses
+differ by only 0.0041 CE, so the measured basin is more certain than its exact
+quadratic vertex. The updated rolling-highest-five fit is
+
+```text
+N_opt(C) = 24.65M * (C / 1e17)^0.548
+D_opt(C) = 0.635B * (C / 1e17)^0.461.
+```
+
+It predicts about 87M at \(10^{18}\), where 68.5M/85.8M/107.7M are running.
+The model-size-triggered 85.8M LR comparison decides between `2.7e-3` and
+`9e-4` using the same 1% validation threshold.
+
+After that curve is complete, a separate batch-128 `p_AR=0.4` study holds
+pure-BD steps and tokens fixed, resets AdamW at the transition, and reports
+both nominal pure-BD-equivalent and realized mixed FLOPs. The preregistered
+neighborhoods and model-growth-triggered 3x LR checks are in
 `followup_isoflop_plan.json`.
 
 ## What we can and cannot conclude

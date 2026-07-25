@@ -158,38 +158,40 @@ Outputs:
 
 ## Adaptive IsoFLOP extension through 1e18
 
-The batch-128 scale-up is complete through `3e17`; the final `1e18` wave is
-running. After every locally bracketed minimum, the five highest-compute
-optima are refit before the next neighborhood is chosen. The fit uses the
-measured minimum and its immediate lower and upper model-size neighbors, not
-the three globally lowest losses, so both sides of the local basin determine
-the quadratic.
+The batch-128 scale-up is complete through `1e18`. After every locally
+bracketed minimum, the five highest-compute optima were refit before the next
+neighborhood was chosen. The fit uses the measured minimum and its immediate
+lower and upper model-size neighbors, not the three globally lowest losses,
+so both sides of the local basin determine the quadratic.
 
 | C | forecast N | fitted N | fitted clean tokens D | D/N | fitted NELBO | forecast error |
 |---:|---:|---:|---:|---:|---:|---:|
 | 3e16 | 4.303M | 4.416M | 0.463B | 104.9 | 4.14035 | -2.6% |
 | 1e17 | 8.346M | 9.338M | 0.729B | 78.1 | 3.88064 | -10.6% |
 | 3e17 | 15.536M | 13.087M | 1.568B | 119.8 | 3.66372 | +18.7% |
-| 1e18 | 28.229M | running | running | running | running | running |
+| 1e18 | 28.229M | 24.501M | 2.793B | 114.0 | 3.44915 | +15.2% |
 
 The first two predictions landed inside their initial neighborhoods. At
 `3e17`, the initial 12.3M/15.5M/19.1M/24.3M wave was still descending at its
 low edge. Parallel 10.3M and 8.5M extensions bracketed the measured minimum;
 the fitted local support is 10.3M/12.3M/15.5M. Thus the predict-next strategy
 did not prevent a miss, but the boundary check prevented an inaccurate
-edge fit and corrected the next forecast.
+edge fit and corrected the next forecast. At `1e18`, the prediction again
+landed within one grid step of the 24.501M fitted optimum. The four scale-up
+forecasts have 12.9% median absolute error: useful for centering a sweep, but
+not accurate enough to replace adaptive bracketing.
 
 Using the five highest-compute completed profiles gives
 
 ```text
-N_opt(C) = 8.23M * (C / 1e17)^0.535
-D_opt(C) = 0.829B * (C / 1e17)^0.436
+N_opt(C) = 7.73M * (C / 1e17)^0.532
+D_opt(C) = 0.890B * (C / 1e17)^0.462
 ```
 
-The fit through only the three batch-128 profiles gives
-\(N_{\mathrm{opt}}\propto C^{0.474}\) and
-\(D_{\mathrm{opt}}\propto C^{0.527}\), close to the expected square-root
-allocation. The corresponding all-budget sensitivities are 0.518 and 0.423.
+The fit through the four batch-128 profiles gives
+\(N_{\mathrm{opt}}\propto C^{0.472}\) and
+\(D_{\mathrm{opt}}\propto C^{0.529}\), close to the expected square-root
+allocation. The corresponding all-budget sensitivities are 0.509 and 0.437.
 No exponent is constrained to 0.5.
 
 ### Learning-rate decisions
@@ -204,12 +206,13 @@ test a 3x decrease only after anchor model size or compute grows by roughly
 | 3e16 | 4.4M | 9e-4 | 2.7e-3 | -0.99% | retain 9e-4 |
 | 1e17 | 8.5M | 9e-4 | 3e-4 | -1.99% | retain 9e-4 |
 | 3e17 | — | 9e-4 | not triggered | — | retain 9e-4 |
-| 1e18 | 28.1M | 9e-4 | 3e-4 | running | pending |
+| 1e18 | 28.1M | 9e-4 | 3e-4 | +0.49% | retain 9e-4 |
 
-The initial final wave used 22.3M/28.1M/35.3M at `9e-4` plus the 28.1M
-`3e-4` probe. Adaptive extensions down through 12.3M use at most 5.542B
+The final profile contains 12.3M/15.5M/19.1M/22.3M/24.3M/28.1M/35.3M at
+`9e-4`. The 28.1M `3e-4` probe improved validation NELBO by only 0.49%, below
+the threshold, so no outer sizes were repeated. The smallest run used 5.542B
 clean tokens, within the prepared 5.776B-token training set, so every run
-remains below one effective epoch.
+remained below one effective epoch.
 
 ### Parallelism, efficiency, and runtime
 
@@ -228,11 +231,11 @@ All runs upload to the `climbmix-isoflop-scaleup` W&B project, and an upload
 initialization failure fails training.
 
 Observed one-GPU accounted MFU rises from 5.9–6.7% at `3e16`, to 8.0–8.8%
-at `1e17`, to 9.6–11.4% at `3e17`. The corresponding per-run ranges were
-7.5–8.6 minutes, 19.1–21.0 minutes, and 44.3–60.2 minutes. The `1e18` wave
-currently projects to about 2.8–3.0 hours.
+at `1e17`, 9.6–11.4% at `3e17`, and 9.6–12.6% at `1e18`. The corresponding
+per-run ranges were 7.5–8.6 minutes, 19.1–21.0 minutes, 44.3–60.2 minutes,
+and 133–175 minutes.
 
-Interim outputs are:
+Outputs are:
 
 - `figures_scaleup/isoflop_scaling_to_1e18.{png,pdf}`
 - `figures_scaleup/isoflop_profile_details.{png,pdf}`
@@ -263,10 +266,10 @@ All five vertices lie inside the measured minimum's immediate lower and upper
 neighbors. Outputs are in `results_refinement/` and `figures_refinement/`;
 the final combined scale-up analysis consumes this refined summary.
 
-### Batch-128 pure-AR and matched-step scale-up plan
+### Batch-128 pure-AR and matched-step scale-up
 
-The next two adaptive studies use batch size 128 at every budget from `1e14`
-through `1e18`. Pure AR starts from the exact architecture nearest `D/N=20`
+The two adaptive studies use batch size 128 at every budget from `1e14`
+through `1e18`. Pure AR started from the exact architecture nearest `D/N=20`
 and measures roughly 1.25x neighbors on both sides. Its compute accounting
 uses the triangular causal work actually executed by FlashAttention,
 including `L(L+1)/2` attended pairs, rather than the historical dense causal
@@ -278,6 +281,28 @@ previous check. A 3x-lower LR is accepted only if validation cross-entropy
 improves by at least 1%; otherwise the incumbent is propagated. The exact
 initial neighborhoods and probe triggers are recorded in
 `followup_isoflop_plan.json`.
+
+Pure AR is complete through `3e17`; the `1e18` neighborhood is running.
+
+| C | fitted N* | fitted D* | D/N | fitted AR CE |
+|---:|---:|---:|---:|---:|
+| 1e14 | 0.539M | 0.028B | 52.3 | 4.88884 |
+| 3e14 | 0.874M | 0.053B | 60.2 | 4.55691 |
+| 1e15 | 1.885M | 0.080B | 42.6 | 4.17734 |
+| 3e15 | 3.551M | 0.128B | 36.2 | 3.84976 |
+| 1e16 | 7.748M | 0.199B | 25.6 | 3.56870 |
+| 3e16 | 12.559M | 0.371B | 29.5 | 3.37249 |
+| 1e17 | 19.831M | 0.787B | 39.7 | 3.17593 |
+| 3e17 | 52.042M | 0.913B | 17.5 | 3.01530 |
+
+The `3e17` prediction missed low, but the adaptive upper extension produced a
+43.7M/54.5M/68.5M bracket around the 52.0M fitted vertex. The resulting
+rolling-highest-five law predicts about 87M at `1e18`. AR retains `2.7e-3`
+through 68.5M; the scheduled same-size `2.7e-3` versus `9e-4` test is running
+at 85.8M. The lower rate will replace the incumbent only for at least 1%
+lower validation CE. The high-compute profiles are shallow: 43.7M and 54.5M
+differ by only 0.0041 CE at `3e17`, so the bracket is more trustworthy than
+the exact fitted vertex.
 
 The subsequent fixed `p_AR=0.4` study matches the step count and clean-token
 count of a hypothetical batch-128 pure-BD run at each nominal `(C,N)`. It

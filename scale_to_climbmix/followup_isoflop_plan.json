@@ -44,8 +44,8 @@
         "reason": "first neighborhood greater than 4x the preceding LR check"
       },
       {
-        "budget": 3e+17,
-        "model": "54.5M",
+        "budget": 1e+18,
+        "model": "85.8M",
         "reason": "first neighborhood greater than 4x the preceding LR check"
       }
     ]
@@ -62,6 +62,18 @@
     "attention_backends": {
       "ar": "FlashAttention through PyTorch causal SDPA",
       "bd": "cuDNN SDPA with the dual-stream boolean mask"
-    }
+    },
+    "initial_size_neighborhoods": {
+      "1e14": ["0.14M", "0.21M", "0.29M", "0.35M"],
+      "3e14": ["0.29M", "0.35M", "0.45M", "0.5M"],
+      "1e15": ["0.5M", "0.73M", "1M", "1.20M"],
+      "3e15": ["0.73M", "1M", "1.20M", "1.56M"],
+      "1e16": ["1.34M", "1.67M", "2M", "2.60M"],
+      "3e16": ["3.4M", "4.4M", "5.6M", "6.9M"],
+      "1e17": ["6.9M", "8.5M", "10.3M", "12.3M"],
+      "3e17": ["10.3M", "12.3M", "15.5M", "19.1M"],
+      "1e18": ["15.5M", "19.1M", "24.3M", "28.1M"]
+    },
+    "learning_rates": "inherit phase-specific model-size decisions from the completed pure-AR and pure-BD probes; accept a new probe only for at least 1% lower validation loss"
   }
 }
