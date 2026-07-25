@@ -15,7 +15,13 @@ from analyze import fit_power_law
 from config import MODEL_BY_LABEL, ROOT
 
 
-HISTORICAL_SUMMARY = ROOT / "results" / "summary.json"
+ORIGINAL_HISTORICAL_SUMMARY = ROOT / "results" / "summary.json"
+REFINED_HISTORICAL_SUMMARY = ROOT / "results_refinement" / "summary.json"
+HISTORICAL_SUMMARY = (
+    REFINED_HISTORICAL_SUMMARY
+    if REFINED_HISTORICAL_SUMMARY.exists()
+    else ORIGINAL_HISTORICAL_SUMMARY
+)
 RESULTS = ROOT / "results_scaleup"
 RUNS = RESULTS / "runs"
 DECISIONS = RESULTS / "lr_decisions.json"
@@ -462,6 +468,7 @@ def main() -> None:
         "profile_fit": "L2 quadratic through the measured minimum and its immediate neighbors in log10(N)",
         "forecast_rule": "rolling highest five bracketed optima",
         "batch_regimes": {"historical": 64, "scaleup": 128},
+        "historical_summary": str(HISTORICAL_SUMMARY.relative_to(ROOT)),
         "profiles": profiles,
         "scaleup_profiles": scale_profiles,
         "scaling_laws": laws,

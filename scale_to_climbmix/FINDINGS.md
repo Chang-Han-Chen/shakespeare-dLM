@@ -52,7 +52,8 @@ The strongest current interpretation is therefore:
 
 - Source: `karpathy/climbmix-400b-shuffle`, a shuffled raw-text conversion of
   NVIDIA ClimbMix.
-- Training data: shards 1–25, containing 1,606,235,727 tokens.
+- Prepared training data: shards 1–90, containing 5,776,049,323 tokens. The
+  completed historical study used shards 1–25 (1,606,235,727 tokens).
 - Validation data: shard 0, containing 64,398,934 tokens.
 - Training is one-pass: a run reads a deterministic prefix and never wraps.
 - Tokenizer: byte-level BPE with 8,192 base tokens plus one diffusion-only
@@ -61,8 +62,9 @@ The strongest current interpretation is therefore:
 
 ### Model and objective
 
-The model is a bias-free Llama-2-style transformer with RMSNorm, RoPE, full
-multi-head attention, SwiGLU, no dropout, and head dimension 16. Counted
+The primary model grid uses bias-free Llama-2-style transformers with
+RMSNorm, RoPE, full multi-head attention, SwiGLU, no dropout, and head
+dimension 16. Counted
 parameters exclude the input embedding but include the untied LM head and
 learned norms.
 
@@ -407,6 +409,39 @@ improves with size: 5.9–6.7% at \(3\cdot10^{16}\), 8.0–8.8% at
 ![Measured profile details](figures_scaleup/isoflop_profile_details.png)
 
 ![Scale-up forecast, MFU, and LR diagnostics](figures_scaleup/scaleup_diagnostics.png)
+
+A targeted historical refinement retained batch size 64 rather than mixing
+the batch-128 regime into old curves. Existing measurements formed each
+initial bracket, and an approximately 1.25x neighbor was added only when the
+measured minimum moved in that direction. Ambiguous LR-transition sizes
+received limited 3x probes with the same 1% acceptance rule. The 0.21M
+interpolation uses one 24-dimensional attention head; all other selected
+refinement models keep head dimension 16.
+
+| FLOPs | refined \(N\) | refined \(D\) | \(D/N\) | refined NELBO |
+|---:|---:|---:|---:|---:|
+| \(10^{14}\) | 0.249M | 43.6M | 174.9 | 5.63461 |
+| \(3\cdot10^{14}\) | 0.379M | 84.9M | 224.0 | 5.26011 |
+| \(10^{15}\) | 0.841M | 99.2M | 118.0 | 4.99174 |
+| \(3\cdot10^{15}\) | 1.178M | 203.5M | 172.8 | 4.69197 |
+| \(10^{16}\) | 1.973M | 360.1M | 182.5 | 4.46028 |
+
+The refined historical laws are
+\(N_{\mathrm{opt}}\propto C^{0.459}\) and
+\(D_{\mathrm{opt}}\propto C^{0.442}\). Every vertex lies between the
+immediate measured neighbors of the profile winner. These points reduce
+discretization error in the all-budget sensitivity fit; the rolling
+high-five law remains the primary extrapolator.
+
+The new scale follow-ups deliberately supersede the old batch-64 curriculum
+endpoints as scaling-law measurements. Pure AR uses batch 128 at all nine
+budgets, exact triangular causal FlashAttention accounting, and a `D/N=20`
+initial anchor with adaptive approximately 1.25x neighbors. After that curve
+is complete, a separate batch-128 `p_AR=0.4` study holds pure-BD steps and
+tokens fixed, resets AdamW at the transition, and reports both nominal
+pure-BD-equivalent and realized mixed FLOPs. The preregistered neighborhoods
+and model-growth-triggered 3x LR checks are in
+`followup_isoflop_plan.json`.
 
 ## What we can and cannot conclude
 

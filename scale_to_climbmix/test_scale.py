@@ -11,14 +11,18 @@ import numpy as np
 import torch
 
 from analyze import fit_l1_quadratic
+from analyze_followup_isoflop import STUDIES, fit_profiles as fit_followup_profiles
+from analyze_refinement import fit_local_profiles
 from analyze_scaleup import fit_scaleup_profiles
 from config import (
+    AR_LARGE_MODEL_SPECS,
     COMPUTE_BUDGETS,
     MASK_ID,
     MAX_STEPS,
     MIN_STEPS,
     MODEL_BY_LABEL,
     MODEL_SPECS,
+    REFINEMENT_MODEL_SPECS,
     VOCAB_SIZE,
     is_feasible,
     steps_for,
@@ -84,6 +88,51 @@ class ConfigTests(unittest.TestCase):
             )
             self.assertEqual(spec.head_dim, 16)
 
+    def test_historical_refinement_configurations(self):
+        expected = {
+            "0.21M": (210_576, 2, 24, 1, 24),
+            "0.35M": (350_464, 7, 32, 2, 16),
+            "0.45M": (448_800, 2, 48, 3, 16),
+            "0.73M": (725_632, 4, 64, 4, 16),
+            "1.20M": (1_198_720, 7, 80, 5, 16),
+            "1.34M": (1_340_544, 5, 96, 6, 16),
+            "1.56M": (1_562_112, 7, 96, 6, 16),
+            "1.67M": (1_672_896, 8, 96, 6, 16),
+            "2.60M": (2_595_712, 11, 112, 7, 16),
+        }
+        self.assertEqual(
+            {spec.label for spec in REFINEMENT_MODEL_SPECS},
+            set(expected),
+        )
+        for label, (n_params, n_layer, d_model, n_head, head_dim) in expected.items():
+            spec = MODEL_BY_LABEL[label]
+            self.assertEqual(spec.n_params, n_params)
+            self.assertEqual(
+                (spec.n_layer, spec.d_model, spec.n_head, spec.head_dim),
+                (n_layer, d_model, n_head, head_dim),
+            )
+
+    def test_large_ar_configurations(self):
+        expected = {
+            "43.7M": (43_734_592, 25, 368, 23),
+            "54.5M": (54_483_456, 29, 384, 24),
+            "68.5M": (68_510_016, 29, 432, 27),
+            "85.8M": (85_832_320, 34, 448, 28),
+            "107.7M": (107_703_424, 35, 496, 31),
+            "134.8M": (134_838_528, 39, 528, 33),
+        }
+        self.assertEqual(
+            {spec.label for spec in AR_LARGE_MODEL_SPECS},
+            set(expected),
+        )
+        for label, (n_params, n_layer, d_model, n_head) in expected.items():
+            spec = MODEL_BY_LABEL[label]
+            self.assertEqual(
+                (spec.n_params, spec.n_layer, spec.d_model, spec.n_head),
+                (n_params, n_layer, d_model, n_head),
+            )
+            self.assertEqual(spec.head_dim, 16)
+
     def test_feasible_coverage(self):
         expected = [5, 7, 6, 4, 3]
         actual = [
@@ -119,6 +168,30 @@ class ConfigTests(unittest.TestCase):
                 spec.autoregressive_training_flops_per_clean_token,
                 spec.training_flops_per_clean_token,
             )
+
+    def test_refinement_profiles_use_immediate_neighbors(self):
+        rows = []
+        for budget in COMPUTE_BUDGETS:
+            for label, n_params, loss in (
+                ("1", 1_000_000, 3.0),
+                ("2", 2_000_000, 2.0),
+                ("4", 4_000_000, 1.0),
+                ("8", 8_000_000, 2.0),
+            ):
+                rows.append(
+                    {
+                        "budget": budget,
+                        "size": label,
+                        "n_params": n_params,
+                        "val_nelbo": loss,
+                        "training_flops_per_clean_token": 12 * n_params,
+                    }
+                )
+        profiles = fit_local_profiles(rows)
+        self.assertEqual(len(profiles), len(COMPUTE_BUDGETS))
+        for profile in profiles:
+            self.assertEqual(profile["support_sizes"], ["2", "4", "8"])
+            self.assertAlmostEqual(profile["n_opt"], 4_000_000, delta=1.0)
 
     def test_curriculum_compute_and_steps(self):
         for budget in COMPUTE_BUDGETS:
@@ -290,6 +363,33 @@ class ScheduleAndAnalysisTests(unittest.TestCase):
         fit = fit_scaleup_profiles(rows)[0]
         self.assertEqual(fit["support_sizes"], ["100", "200", "400"])
         self.assertAlmostEqual(fit["n_opt"], 200.0)
+
+    def test_followup_ar_fit_uses_local_bracket(self):
+        rows = []
+        for n_params in (100, 200, 400, 800):
+            rows.append(
+                {
+                    "budget": 1e12,
+                    "size": str(n_params),
+                    "n_params": n_params,
+                    "val_ar_ce": (
+                        np.log10(n_params) - np.log10(400)
+                    )
+                    ** 2
+                    + 1.0,
+                    "flash_causal_training_flops_per_clean_token": (
+                        6 * n_params
+                    ),
+                }
+            )
+        fit = fit_followup_profiles(rows, STUDIES["ar"])[0]
+        self.assertEqual(fit["support_sizes"], ["200", "400", "800"])
+        self.assertAlmostEqual(fit["n_opt"], 400.0)
+        self.assertAlmostEqual(
+            fit["d_opt"],
+            1e12 / (6 * 400),
+            delta=1e-4,
+        )
 
 
 if __name__ == "__main__":

@@ -9,10 +9,10 @@ The official NVIDIA release is a 400B-token, CC BY-NC 4.0 research dataset
 stored as GPT-2 token sequences. For practical custom-tokenizer training, this
 experiment uses `karpathy/climbmix-400b-shuffle`, a shuffled raw-text
 conversion of that release. Shard 0 is held out for validation and shards
-1–50 are prepared as training data. The completed \(10^{14}\)–\(10^{16}\)
-study used shards 1–25; the extension supplies about 3.2B tokens for the
-\(10^{18}\) scale-up. A run reads a deterministic prefix exactly once and
-never wraps around the training set.
+1–90 are prepared as training data. The completed \(10^{14}\)–\(10^{16}\)
+study used shards 1–25; the extension supplies 5.776B tokens for adaptive
+\(10^{18}\) size bracketing. A run reads a deterministic prefix exactly once
+and never wraps around the training set.
 
 The tokenizer is byte-level BPE:
 
@@ -23,8 +23,9 @@ The tokenizer is byte-level BPE:
 
 ## Model table
 
-All models are bias-free Llama-2-style transformers with RMSNorm, RoPE, full
-multi-head attention, SwiGLU, no dropout, and head dimension 16. The input
+All primary-grid models are bias-free Llama-2-style transformers with
+RMSNorm, RoPE, full multi-head attention, SwiGLU, no dropout, and head
+dimension 16. The input
 embedding is excluded from counted `N`; the untied 8,193-way LM head and all
 learned norms are included.
 
@@ -205,9 +206,10 @@ test a 3x decrease only after anchor model size or compute grows by roughly
 | 3e17 | — | 9e-4 | not triggered | — | retain 9e-4 |
 | 1e18 | 28.1M | 9e-4 | 3e-4 | running | pending |
 
-The final wave uses 22.3M/28.1M/35.3M at `9e-4` plus the 28.1M `3e-4`
-probe. The low model receives 3.088B clean tokens, within the prepared
-3.210B-token training set, so every run remains below one effective epoch.
+The initial final wave used 22.3M/28.1M/35.3M at `9e-4` plus the 28.1M
+`3e-4` probe. Adaptive extensions down through 12.3M use at most 5.542B
+clean tokens, within the prepared 5.776B-token training set, so every run
+remains below one effective epoch.
 
 ### Parallelism, efficiency, and runtime
 
@@ -237,6 +239,53 @@ Interim outputs are:
 - `figures_scaleup/scaleup_diagnostics.{png,pdf}`
 - `results_scaleup/summary.json`, `optimal_allocation.csv`,
   `best_runs.csv`, `forecast_history.json`, and `lr_decisions.json`
+
+### Historical-curve refinement
+
+The five historical profiles were revisited with targeted batch-64 points
+while the final scale-up extensions trained. Existing measurements supplied
+the initial neighbors, and roughly 1.25x points were added only in the
+direction of a lower loss. LR probes were limited to historical transition
+regions and used the same 1% acceptance threshold. The 0.21M interpolation
+uses width 24 with one 24-dimensional head; every other selected refinement
+model retains head dimension 16.
+
+| C | refined N* | refined D* | D/N | refined NELBO |
+|---:|---:|---:|---:|---:|
+| 1e14 | 0.249M | 43.6M | 174.9 | 5.63461 |
+| 3e14 | 0.379M | 84.9M | 224.0 | 5.26011 |
+| 1e15 | 0.841M | 99.2M | 118.0 | 4.99174 |
+| 3e15 | 1.178M | 203.5M | 172.8 | 4.69197 |
+| 1e16 | 1.973M | 360.1M | 182.5 | 4.46028 |
+
+The refitted historical laws are `N_opt ~ C^0.459` and `D_opt ~ C^0.442`.
+All five vertices lie inside the measured minimum's immediate lower and upper
+neighbors. Outputs are in `results_refinement/` and `figures_refinement/`;
+the final combined scale-up analysis consumes this refined summary.
+
+### Batch-128 pure-AR and matched-step scale-up plan
+
+The next two adaptive studies use batch size 128 at every budget from `1e14`
+through `1e18`. Pure AR starts from the exact architecture nearest `D/N=20`
+and measures roughly 1.25x neighbors on both sides. Its compute accounting
+uses the triangular causal work actually executed by FlashAttention,
+including `L(L+1)/2` attended pairs, rather than the historical dense causal
+upper bound. Each locally bracketed curve updates the allocation law before
+the next budget.
+
+AR LR checks occur only after the anchor model grows by more than 4x from the
+previous check. A 3x-lower LR is accepted only if validation cross-entropy
+improves by at least 1%; otherwise the incumbent is propagated. The exact
+initial neighborhoods and probe triggers are recorded in
+`followup_isoflop_plan.json`.
+
+The subsequent fixed `p_AR=0.4` study matches the step count and clean-token
+count of a hypothetical batch-128 pure-BD run at each nominal `(C,N)`. It
+uses causal FlashAttention for the first 40% of steps, resets AdamW, and uses
+cuDNN masked SDPA for the final 60% BD phase. Both the nominal pure-BD
+equivalent compute and the lower realized mixed compute are reported. AR and
+BD receive separate phase-local 5%/80%/15% WSD schedules and separately
+selected peak LRs.
 
 ## AR-to-BD curriculum follow-up
 

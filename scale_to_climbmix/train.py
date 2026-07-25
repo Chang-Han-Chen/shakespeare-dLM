@@ -108,6 +108,7 @@ def attention_backend_context(name: str, device: torch.device):
     if device.type != "cuda" or name == "auto":
         return nullcontext()
     backends = {
+        "flash": SDPBackend.FLASH_ATTENTION,
         "cudnn": SDPBackend.CUDNN_ATTENTION,
         "efficient": SDPBackend.EFFICIENT_ATTENTION,
         "math": SDPBackend.MATH,

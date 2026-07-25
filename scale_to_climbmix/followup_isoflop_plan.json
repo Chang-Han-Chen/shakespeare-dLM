@@ -1,0 +1,67 @@
+{
+  "common": {
+    "batch_size": 128,
+    "compute_budgets": [
+      100000000000000.0,
+      300000000000000.0,
+      1000000000000000.0,
+      3000000000000000.0,
+      1e+16,
+      3e+16,
+      1e+17,
+      3e+17,
+      1e+18
+    ],
+    "learning_rate_acceptance_relative_loss_improvement": 0.01,
+    "model_growth_before_lower_lr_probe": 4.0,
+    "model_neighborhood_ratio": 1.25,
+    "parallelism": "four independent one-GPU H100 jobs"
+  },
+  "pure_ar": {
+    "attention_backend": "FlashAttention through PyTorch causal SDPA",
+    "compute_accounting": "triangular_flash_causal_v2",
+    "initial_allocation": "D/N=20 using exact per-architecture FLOPs",
+    "initial_size_neighborhoods": {
+      "1e14": ["0.5M", "0.73M", "1M", "1.20M"],
+      "3e14": ["1M", "1.20M", "1.56M", "2M"],
+      "1e15": ["1.67M", "2M", "2.60M", "3.4M"],
+      "3e15": ["3.4M", "4.4M", "5.6M", "6.9M"],
+      "1e16": ["6.9M", "8.5M", "10.3M", "12.3M"],
+      "3e16": ["10.3M", "12.3M", "15.5M", "19.1M"],
+      "1e17": ["19.1M", "22.3M", "28.1M", "35.3M"],
+      "3e17": ["35.3M", "43.7M", "54.5M", "68.5M"],
+      "1e18": ["68.5M", "85.8M", "107.7M", "134.8M"]
+    },
+    "lr_probe_anchors": [
+      {
+        "budget": 1000000000000000.0,
+        "model": "2.60M",
+        "reason": "first model greater than 4x the 0.5M AR-LR diagnostic"
+      },
+      {
+        "budget": 3e+16,
+        "model": "12.3M",
+        "reason": "first neighborhood greater than 4x the preceding LR check"
+      },
+      {
+        "budget": 3e+17,
+        "model": "54.5M",
+        "reason": "first neighborhood greater than 4x the preceding LR check"
+      }
+    ]
+  },
+  "matched_p_ar_0p4": {
+    "ar_fraction": 0.4,
+    "comparison": "same batch-128 steps and clean tokens as nominal pure BD",
+    "optimizer_reset_at_transition": true,
+    "schedules": "separate 5% warmup, 80% stable, 15% decay in each phase",
+    "compute_reporting": [
+      "nominal pure-BD-equivalent FLOPs",
+      "realized triangular-AR plus dense-dual-stream-BD FLOPs"
+    ],
+    "attention_backends": {
+      "ar": "FlashAttention through PyTorch causal SDPA",
+      "bd": "cuDNN SDPA with the dual-stream boolean mask"
+    }
+  }
+}
