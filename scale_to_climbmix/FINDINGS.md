@@ -442,7 +442,7 @@ The new scale follow-ups deliberately supersede the old batch-64 curriculum
 endpoints as scaling-law measurements. Pure AR uses batch 128 at all nine
 budgets, exact triangular causal FlashAttention accounting, and a `D/N=20`
 initial anchor with adaptive approximately 1.25x neighbors. It is complete
-through \(3\cdot10^{17}\):
+through \(10^{18}\):
 
 | FLOPs | fitted \(N\) | fitted \(D\) | \(D/N\) | fitted AR CE |
 |---:|---:|---:|---:|---:|
@@ -454,6 +454,7 @@ through \(3\cdot10^{17}\):
 | \(3\cdot10^{16}\) | 12.559M | 0.371B | 29.5 | 3.37249 |
 | \(10^{17}\) | 19.831M | 0.787B | 39.7 | 3.17593 |
 | \(3\cdot10^{17}\) | 52.042M | 0.913B | 17.5 | 3.01530 |
+| \(10^{18}\) | 94.697M | 1.687B | 17.8 | 2.79969 |
 
 The rolling law did not accurately predict every vertex: in particular, its
 \(3\cdot10^{17}\) seed was near 35M. The boundary check triggered upper
@@ -461,11 +462,11 @@ extensions and localized the minimum with 43.7M/54.5M/68.5M support. Thus the
 strategy is effective as an adaptive search but only moderately accurate as
 a point predictor. The profile is also shallow: the 43.7M and 54.5M losses
 differ by only 0.0041 CE, so the measured basin is more certain than its exact
-quadratic vertex. The updated rolling-highest-five fit is
+quadratic vertex. The final rolling-highest-five fit is
 
 ```text
-N_opt(C) = 24.65M * (C / 1e17)^0.548
-D_opt(C) = 0.635B * (C / 1e17)^0.461.
+N_opt(C) = 25.16M * (C / 1e17)^0.558
+D_opt(C) = 0.623B * (C / 1e17)^0.450.
 ```
 
 It predicted about 87M at \(10^{18}\). At the incumbent `2.7e-3`,
@@ -473,10 +474,16 @@ It predicted about 87M at \(10^{18}\). At the incumbent `2.7e-3`,
 unbracketed on its low side. The model-size-triggered 85.8M `9e-4` probe
 measured 2.80447, a 2.03% improvement, so it cleared the 1% validation
 threshold. The lower LR is propagated to 85.8M and larger models; 43.7M and
-54.5M remain below that transition and retain `2.7e-3`. Adaptive lower
-extensions and accepted-LR upper repeats are running.
+54.5M remain below that transition and retain `2.7e-3`. Accepted-LR repeats
+at 107.7M and 134.8M reached 2.80790 and 2.80825, respectively, giving a
+68.5M/85.8M/107.7M bracket and a 94.7M fitted vertex. The forecast was 8.2%
+low. Across the seven next-budget forecasts the median absolute model-size
+error is 11.8%; every profile was nevertheless localized by the boundary
+checks and adaptive extensions.
 
-After that curve is complete, a separate batch-128 `p_AR=0.4` study holds
+![Pure-AR IsoFLOP analysis](figures_ar/pure_ar_isoflop.png)
+
+A separate batch-128 `p_AR=0.4` study holds
 pure-BD steps and tokens fixed, resets AdamW at the transition, and reports
 both nominal pure-BD-equivalent and realized mixed FLOPs. The preregistered
 neighborhoods and model-growth-triggered 3x LR checks are in

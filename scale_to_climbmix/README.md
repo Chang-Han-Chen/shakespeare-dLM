@@ -282,7 +282,7 @@ improves by at least 1%; otherwise the incumbent is propagated. The exact
 initial neighborhoods and probe triggers are recorded in
 `followup_isoflop_plan.json`.
 
-Pure AR is complete through `3e17`; the `1e18` neighborhood is running.
+Pure AR is complete through `1e18`.
 
 | C | fitted N* | fitted D* | D/N | fitted AR CE |
 |---:|---:|---:|---:|---:|
@@ -294,6 +294,7 @@ Pure AR is complete through `3e17`; the `1e18` neighborhood is running.
 | 3e16 | 12.559M | 0.371B | 29.5 | 3.37249 |
 | 1e17 | 19.831M | 0.787B | 39.7 | 3.17593 |
 | 3e17 | 52.042M | 0.913B | 17.5 | 3.01530 |
+| 1e18 | 94.697M | 1.687B | 17.8 | 2.79969 |
 
 The `3e17` prediction missed low, but the adaptive upper extension produced a
 43.7M/54.5M/68.5M bracket around the 52.0M fitted vertex. The resulting
@@ -302,12 +303,16 @@ rolling-highest-five law predicted about 87M at `1e18`. The measured
 2.85163/2.86248/2.86609, so the initial neighborhood was unbracketed on its
 low side. The scheduled 85.8M `9e-4` probe reached 2.80447, a 2.03%
 improvement, and cleared the 1% threshold. Thus `2.7e-3` remains selected
-through 68.5M while 85.8M and larger models use `9e-4`. The 43.7M and 54.5M
-lower extensions and the 107.7M/134.8M accepted-LR repeats are running. The
-obsolete partial 134.8M incumbent run was stopped as soon as the LR decision
-was known. The high-compute profiles are shallow: 43.7M and 54.5M differ by
-only 0.0041 CE at `3e17`, so the bracket is more trustworthy than the exact
-fitted vertex.
+through 68.5M while 85.8M and larger models use `9e-4`. At the accepted LR,
+107.7M and 134.8M reached 2.80790 and 2.80825, respectively. The resulting
+68.5M/85.8M/107.7M bracket fits a 94.7M vertex; the rolling-law prediction
+was only 8.2% low. Across all seven next-budget forecasts the median absolute
+model-size error is 11.8%, while boundary-triggered extensions bracket every
+profile. The final rolling-highest-five laws are `N_opt ~ C^0.558` and
+`D_opt ~ C^0.450`. The high-compute profiles remain shallow, so the measured
+basin is more trustworthy than the exact fitted vertex.
+
+![Pure-AR IsoFLOP analysis](figures_ar/pure_ar_isoflop.png)
 
 The subsequent fixed `p_AR=0.4` study matches the step count and clean-token
 count of a hypothetical batch-128 pure-BD run at each nominal `(C,N)`. It
