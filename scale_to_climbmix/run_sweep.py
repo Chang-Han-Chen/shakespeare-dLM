@@ -10,11 +10,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import (
+    BATCH_SIZE,
     COMPUTE_BUDGETS,
     LEARNING_RATES,
     MODEL_SPECS,
     RESULTS_DIR,
     ROOT,
+    WANDB_PROJECT,
     budget_slug,
     is_feasible,
     lr_slug,
@@ -30,7 +32,19 @@ def parse_args():
     parser.add_argument("--lr", type=float, action="append")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--devices",
+        help="Comma-separated devices for independent jobs, e.g. cuda:0,cuda:1",
+    )
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--compile", action="store_true")
+    parser.add_argument(
+        "--attention-backend",
+        choices=("auto", "cudnn", "efficient", "math"),
+        default="auto",
+    )
+    parser.add_argument("--wandb-project", default=WANDB_PROJECT)
+    parser.add_argument("--wandb-entity")
     return parser.parse_args()
 
 
@@ -75,7 +89,14 @@ def run_grid(args):
     return runs
 
 
-def execute_run(run, device):
+def execute_run(
+    run,
+    device,
+    compile_model,
+    attention_backend,
+    wandb_project,
+    wandb_entity,
+):
     run["run_dir"].mkdir(parents=True, exist_ok=True)
     command = [
         sys.executable,
@@ -90,7 +111,29 @@ def execute_run(run, device):
         str(run["result"]),
         "--device",
         device,
+        "--batch-size",
+        str(BATCH_SIZE),
+        "--attention-backend",
+        attention_backend,
     ]
+    if compile_model:
+        command.append("--compile")
+    if wandb_project:
+        command.extend(
+            [
+                "--wandb-project",
+                wandb_project,
+                "--wandb-name",
+                (
+                    f"{budget_slug(run['budget'])}-{run['spec'].label}-"
+                    f"lr-{lr_slug(run['lr'])}"
+                ),
+                "--wandb-group",
+                budget_slug(run["budget"]),
+            ]
+        )
+    if wandb_entity:
+        command.extend(["--wandb-entity", wandb_entity])
     process = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
     (run["run_dir"] / "train.log").write_text(
         process.stdout + ("\n[stderr]\n" + process.stderr if process.stderr else "")
@@ -102,6 +145,17 @@ def main() -> None:
     args = parse_args()
     if args.workers < 1:
         raise ValueError("workers must be positive")
+    devices = (
+        tuple(part.strip() for part in args.devices.split(",") if part.strip())
+        if args.devices
+        else (args.device,)
+    )
+    if not devices:
+        raise ValueError("At least one device is required")
+    if args.workers > len(devices):
+        raise ValueError(
+            f"workers={args.workers} would oversubscribe {len(devices)} devices"
+        )
     runs = run_grid(args)
     print(
         f"planned_runs={len(runs)} "
@@ -126,10 +180,19 @@ def main() -> None:
 
     started = time.monotonic()
     failures = []
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+    executors = [ThreadPoolExecutor(max_workers=1) for _ in range(args.workers)]
+    try:
         futures = {
-            executor.submit(execute_run, run, args.device): run
-            for run in todo
+            executors[index % args.workers].submit(
+                execute_run,
+                run,
+                devices[index % args.workers],
+                args.compile,
+                args.attention_backend,
+                args.wandb_project,
+                args.wandb_entity,
+            ): run
+            for index, run in enumerate(todo)
         }
         for completed, future in enumerate(as_completed(futures), start=1):
             run, process = future.result()
@@ -150,6 +213,9 @@ def main() -> None:
                 f"elapsed_h={(time.monotonic() - started) / 3600:.2f}",
                 flush=True,
             )
+    finally:
+        for executor in executors:
+            executor.shutdown()
     if failures:
         raise SystemExit(f"{len(failures)} runs failed: {failures}")
     print(f"all runs complete in {(time.monotonic() - started) / 3600:.2f} hours")

@@ -9,7 +9,9 @@ The official NVIDIA release is a 400B-token, CC BY-NC 4.0 research dataset
 stored as GPT-2 token sequences. For practical custom-tokenizer training, this
 experiment uses `karpathy/climbmix-400b-shuffle`, a shuffled raw-text
 conversion of that release. Shard 0 is held out for validation and shards
-1–25 are training data. A run reads a deterministic prefix exactly once; it
+1–50 are prepared as training data. The completed \(10^{14}\)–\(10^{16}\)
+study used shards 1–25; the extension supplies about 3.2B tokens for the
+\(10^{18}\) scale-up. A run reads a deterministic prefix exactly once and
 never wraps around the training set.
 
 The tokenizer is byte-level BPE:
@@ -92,11 +94,14 @@ Feasible step counts:
 
 ```bash
 python -m pip install -r scale_to_climbmix/requirements.txt
-python scale_to_climbmix/download_data.py
-python scale_to_climbmix/prepare_data.py
+python scale_to_climbmix/download_data.py --workers 4
+python scale_to_climbmix/prepare_data.py --workers 4
 python scale_to_climbmix/test_scale.py
 python scale_to_climbmix/run_sweep.py --dry-run
-python scale_to_climbmix/run_sweep.py --workers 4
+python scale_to_climbmix/run_sweep.py --workers 4 \
+  --devices cuda:0,cuda:1,cuda:2,cuda:3 \
+  --compile --attention-backend cudnn \
+  --wandb-project climbmix-isoflop-scaleup
 python scale_to_climbmix/bracket_lr.py --workers 4
 python scale_to_climbmix/analyze.py
 ```
@@ -149,6 +154,89 @@ Outputs:
 - `results/best_runs.csv`, `results/optimal_allocation.csv`, and
   `results/summary.json`: machine-readable selections, fits, diagnostics, and
   L2 sensitivity results.
+
+## Adaptive IsoFLOP extension through 1e18
+
+The batch-128 scale-up is complete through `3e17`; the final `1e18` wave is
+running. After every locally bracketed minimum, the five highest-compute
+optima are refit before the next neighborhood is chosen. The fit uses the
+measured minimum and its immediate lower and upper model-size neighbors, not
+the three globally lowest losses, so both sides of the local basin determine
+the quadratic.
+
+| C | forecast N | fitted N | fitted clean tokens D | D/N | fitted NELBO | forecast error |
+|---:|---:|---:|---:|---:|---:|---:|
+| 3e16 | 4.303M | 4.416M | 0.463B | 104.9 | 4.14035 | -2.6% |
+| 1e17 | 8.346M | 9.338M | 0.729B | 78.1 | 3.88064 | -10.6% |
+| 3e17 | 15.536M | 13.087M | 1.568B | 119.8 | 3.66372 | +18.7% |
+| 1e18 | 28.229M | running | running | running | running | running |
+
+The first two predictions landed inside their initial neighborhoods. At
+`3e17`, the initial 12.3M/15.5M/19.1M/24.3M wave was still descending at its
+low edge. Parallel 10.3M and 8.5M extensions bracketed the measured minimum;
+the fitted local support is 10.3M/12.3M/15.5M. Thus the predict-next strategy
+did not prevent a miss, but the boundary check prevented an inaccurate
+edge fit and corrected the next forecast.
+
+Using the five highest-compute completed profiles gives
+
+```text
+N_opt(C) = 8.23M * (C / 1e17)^0.535
+D_opt(C) = 0.829B * (C / 1e17)^0.436
+```
+
+The fit through only the three batch-128 profiles gives
+\(N_{\mathrm{opt}}\propto C^{0.474}\) and
+\(D_{\mathrm{opt}}\propto C^{0.527}\), close to the expected square-root
+allocation. The corresponding all-budget sensitivities are 0.518 and 0.423.
+No exponent is constrained to 0.5.
+
+### Learning-rate decisions
+
+The scale-up keeps a candidate LR only for at least a 1% relative validation
+NELBO improvement. The batch transition tested a 3x increase; later checks
+test a 3x decrease only after anchor model size or compute grows by roughly
+4x from the previous check.
+
+| C | anchor | incumbent | probe | relative improvement | decision |
+|---:|---:|---:|---:|---:|---|
+| 3e16 | 4.4M | 9e-4 | 2.7e-3 | -0.99% | retain 9e-4 |
+| 1e17 | 8.5M | 9e-4 | 3e-4 | -1.99% | retain 9e-4 |
+| 3e17 | — | 9e-4 | not triggered | — | retain 9e-4 |
+| 1e18 | 28.1M | 9e-4 | 3e-4 | running | pending |
+
+The final wave uses 22.3M/28.1M/35.3M at `9e-4` plus the 28.1M `3e-4`
+probe. The low model receives 3.088B clean tokens, within the prepared
+3.210B-token training set, so every run remains below one effective epoch.
+
+### Parallelism, efficiency, and runtime
+
+Four independent one-GPU jobs minimize wave latency. Four-way DDP divides
+global batch 128 into local batches of 32 and measured only 230k aggregate
+clean tokens/s in the 10M smoke test, versus 349k for a comparable cold
+single-GPU run and 603k for a cache-warm long single-GPU run. DDP is therefore
+not used for the main waves. Independent speculative size jobs can consume
+extra GPU-hours if an LR probe wins, but they reduce best-case wall time and
+do not increase the worst-case dependency path.
+
+Long runs use BF16 autocast, TF32, fused AdamW, foreach gradient clipping,
+TorchInductor compilation, and dense cuDNN SDPA. FlashAttention cannot
+represent the experiment's non-null boolean BD mask on this PyTorch stack.
+All runs upload to the `climbmix-isoflop-scaleup` W&B project, and an upload
+initialization failure fails training.
+
+Observed one-GPU accounted MFU rises from 5.9–6.7% at `3e16`, to 8.0–8.8%
+at `1e17`, to 9.6–11.4% at `3e17`. The corresponding per-run ranges were
+7.5–8.6 minutes, 19.1–21.0 minutes, and 44.3–60.2 minutes. The `1e18` wave
+currently projects to about 2.8–3.0 hours.
+
+Interim outputs are:
+
+- `figures_scaleup/isoflop_scaling_to_1e18.{png,pdf}`
+- `figures_scaleup/isoflop_profile_details.{png,pdf}`
+- `figures_scaleup/scaleup_diagnostics.{png,pdf}`
+- `results_scaleup/summary.json`, `optimal_allocation.csv`,
+  `best_runs.csv`, `forecast_history.json`, and `lr_decisions.json`
 
 ## AR-to-BD curriculum follow-up
 

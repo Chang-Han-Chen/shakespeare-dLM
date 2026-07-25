@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import os
 import time
 from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +25,7 @@ from config import (
     EOT_TOKEN,
     MASK_ID,
     MASK_TOKEN,
+    MIN_PREPARED_TRAIN_TOKENS,
     RAW_DIR,
     TOKENIZED_DIR,
     TOKENIZER_META_PATH,
@@ -39,6 +42,7 @@ def parse_args():
     parser.add_argument("--force-tokenizer", action="store_true")
     parser.add_argument("--force-encode", action="store_true")
     parser.add_argument("--batch-rows", type=int, default=2048)
+    parser.add_argument("--workers", type=int, default=1)
     return parser.parse_args()
 
 
@@ -148,8 +152,29 @@ def encode_shard(
     return metadata
 
 
+def encode_configured_shard(
+    split: str,
+    index: int,
+    batch_rows: int,
+    force: bool,
+) -> tuple[str, int, dict]:
+    tokenizer = Tokenizer.from_file(str(TOKENIZER_PATH))
+    raw_path = RAW_DIR / f"shard_{index:05d}.parquet"
+    output_path = TOKENIZED_DIR / split / f"shard_{index:05d}.bin"
+    metadata = encode_shard(
+        tokenizer,
+        raw_path,
+        output_path,
+        batch_rows,
+        force,
+    )
+    return split, index, metadata
+
+
 def main() -> None:
     args = parse_args()
+    if args.workers < 1:
+        raise ValueError("workers must be positive")
     raw_manifest = RAW_DIR / "manifest.json"
     if not raw_manifest.exists():
         raise FileNotFoundError("Run download_data.py first")
@@ -161,23 +186,60 @@ def main() -> None:
     if tokenizer.get_vocab_size() != VOCAB_SIZE:
         raise RuntimeError("Tokenizer vocabulary does not match config")
 
-    splits = {"train": [], "val": []}
-    for split, indices in (("val", VALIDATION_SHARDS), ("train", TRAIN_SHARDS)):
-        for position, index in enumerate(indices, start=1):
-            raw_path = RAW_DIR / f"shard_{index:05d}.parquet"
-            output_path = TOKENIZED_DIR / split / f"shard_{index:05d}.bin"
+    split_indices = (("val", VALIDATION_SHARDS), ("train", TRAIN_SHARDS))
+    jobs = [
+        (split, index)
+        for split, indices in split_indices
+        for index in indices
+    ]
+    completed = []
+    if args.workers == 1:
+        for position, (split, index) in enumerate(jobs, start=1):
             print(
-                f"[{split} {position}/{len(indices)}] encoding {raw_path.name}",
+                f"[{position}/{len(jobs)}] encoding "
+                f"{split}/shard_{index:05d}.parquet",
                 flush=True,
             )
-            metadata = encode_shard(
-                tokenizer,
-                raw_path,
-                output_path,
-                args.batch_rows,
-                args.force_encode,
+            completed.append(
+                encode_configured_shard(
+                    split,
+                    index,
+                    args.batch_rows,
+                    args.force_encode,
+                )
             )
-            splits[split].append(metadata)
+    else:
+        context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(
+            max_workers=args.workers,
+            mp_context=context,
+        ) as executor:
+            futures = {
+                executor.submit(
+                    encode_configured_shard,
+                    split,
+                    index,
+                    args.batch_rows,
+                    args.force_encode,
+                ): (split, index)
+                for split, index in jobs
+            }
+            for position, future in enumerate(as_completed(futures), start=1):
+                split, index, metadata = future.result()
+                completed.append((split, index, metadata))
+                print(
+                    f"[{position}/{len(jobs)}] {split}/shard_{index:05d}: "
+                    f"{metadata['token_count'] / 1e6:.2f}M tokens",
+                    flush=True,
+                )
+
+    splits = {"train": [], "val": []}
+    for split, index, metadata in sorted(
+        completed,
+        key=lambda row: (row[0] != "val", row[1]),
+    ):
+        splits[split].append(metadata)
+        if args.workers == 1:
             print(
                 f"  {metadata['document_count']:,} docs, "
                 f"{metadata['token_count'] / 1e6:.2f}M tokens",
@@ -195,6 +257,11 @@ def main() -> None:
         "train_tokens": sum(row["token_count"] for row in splits["train"]),
         "val_tokens": sum(row["token_count"] for row in splits["val"]),
     }
+    if manifest["train_tokens"] < MIN_PREPARED_TRAIN_TOKENS:
+        raise RuntimeError(
+            f"Prepared only {manifest['train_tokens']:,} training tokens; "
+            f"need at least {MIN_PREPARED_TRAIN_TOKENS:,}"
+        )
     DATA_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     temporary = DATA_MANIFEST_PATH.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")

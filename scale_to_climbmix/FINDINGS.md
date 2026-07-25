@@ -353,6 +353,61 @@ the dense SDPA implementation but improved full-step wall time by only 4.0%
 (100.57 ms to 96.71 ms). We retained simple SDPA to avoid adding complexity
 and changing the implementation midway through the study.
 
+## 7. Pure-BD scale-up through 1e18
+
+The batch-128 extension is complete through \(3\cdot10^{17}\) FLOPs; the
+final \(10^{18}\)-FLOP wave is running. Forecasting uses the five
+highest-compute bracketed optima, and every new profile is fitted only after
+the measured minimum has both an immediate lower and upper neighbor.
+
+| FLOPs | forecast \(N\) | fitted \(N\) | fitted \(D\) | \(D/N\) | fitted NELBO |
+|---:|---:|---:|---:|---:|---:|
+| \(3\cdot10^{16}\) | 4.303M | 4.416M | 0.463B | 104.9 | 4.14035 |
+| \(10^{17}\) | 8.346M | 9.338M | 0.729B | 78.1 | 3.88064 |
+| \(3\cdot10^{17}\) | 15.536M | 13.087M | 1.568B | 119.8 | 3.66372 |
+| \(10^{18}\) | 28.229M | running | running | running | running |
+
+The first two forecasts missed the fitted vertex by -2.6% and -10.6% while
+remaining inside their initial neighborhoods. The \(3\cdot10^{17}\) forecast
+overshot by 18.7%, and the initial four-size profile was still descending at
+12.3M. Parallel 10.3M and 8.5M extensions then bracketed the minimum. Its
+local quadratic uses 10.3M/12.3M/15.5M and has a 13.087M vertex. This is the
+important success criterion for the adaptive design: a missed forecast
+triggers more measurement instead of an edge extrapolation.
+
+Through \(3\cdot10^{17}\), the rolling highest-five allocation laws are
+
+```text
+N_opt(C) = 8.23M * (C / 1e17)^0.535
+D_opt(C) = 0.829B * (C / 1e17)^0.436.
+```
+
+The three batch-128 points alone give exponents 0.474 and 0.527,
+respectively, much closer to symmetric square-root allocation. The all-budget
+sensitivities are 0.518 and 0.423. These high-scale results support the
+direction of the square-root hypothesis, although only three batch-128
+profiles are complete and \(D/N\) remains visibly noisy.
+
+The higher-LR batch-transition probe (`2.7e-3`) was 0.99% worse than `9e-4`,
+and the \(10^{17}\) lower-LR probe (`3e-4`) was 1.99% worse. Both were
+rejected under the preregistered 1% validation threshold. No probe was
+triggered at \(3\cdot10^{17}\). The final wave runs 22.3M/28.1M/35.3M at
+`9e-4` and a 28.1M `3e-4` probe; if the latter wins by at least 1%, the outer
+sizes will be repeated at the accepted LR.
+
+Four independent one-GPU jobs remain the latency-optimal schedule. The
+four-way DDP smoke test achieved only 230k aggregate clean tokens/s because
+global batch 128 becomes local batch 32, versus 349k for the comparable cold
+single-GPU run and 603k for a cache-warm long run. Accounted one-GPU MFU
+improves with size: 5.9–6.7% at \(3\cdot10^{16}\), 8.0–8.8% at
+\(10^{17}\), and 9.6–11.4% at \(3\cdot10^{17}\).
+
+![Scale-up IsoFLOP analysis](figures_scaleup/isoflop_scaling_to_1e18.png)
+
+![Measured profile details](figures_scaleup/isoflop_profile_details.png)
+
+![Scale-up forecast, MFU, and LR diagnostics](figures_scaleup/scaleup_diagnostics.png)
+
 ## What we can and cannot conclude
 
 ### Supported by the current experiments

@@ -1,0 +1,172 @@
+{
+  "attention_backend": "cudnn",
+  "batch_size": 128,
+  "block_len": 4,
+  "budget": 1e+18,
+  "clean_tokens": 32768000,
+  "compiled": true,
+  "compute_accounting": "dense_dual_stream_attention_v1",
+  "d_ff": 600,
+  "d_model": 224,
+  "decay_fraction": 0.15,
+  "device": "cuda:0",
+  "duration_seconds": 56.45984345301986,
+  "effective_compute_parameters": 11750256.0,
+  "effective_train_epochs": 0.010209180649878536,
+  "evaluation_duration_seconds": 2.14142563380301,
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "head_dim": 16,
+  "learning_rate": 0.0009,
+  "local_batch_size": 128,
+  "n_head": 14,
+  "n_layer": 13,
+  "n_params": 9692032,
+  "realized_flops": 4620388663296000,
+  "seed": 1337,
+  "sequence_length": 256,
+  "size": "10M",
+  "stable_fraction": 0.7999999999999999,
+  "status": "complete",
+  "steps": 1000,
+  "tokens_per_second": 580377.0962855432,
+  "train_dataset_tokens": 3209660121,
+  "train_loss": 5.6342878341674805,
+  "train_trace": [
+    {
+      "grad_norm": 1.4930200576782227,
+      "learning_rate": 1.8e-05,
+      "step": 1,
+      "train_nelbo": 8.988632202148438
+    },
+    {
+      "grad_norm": 0.35842010378837585,
+      "learning_rate": 0.0009,
+      "step": 50,
+      "train_nelbo": 7.127511024475098
+    },
+    {
+      "grad_norm": 0.293025404214859,
+      "learning_rate": 0.0009,
+      "step": 100,
+      "train_nelbo": 7.29187536239624
+    },
+    {
+      "grad_norm": 0.3271985948085785,
+      "learning_rate": 0.0009,
+      "step": 150,
+      "train_nelbo": 7.2922563552856445
+    },
+    {
+      "grad_norm": 0.49861109256744385,
+      "learning_rate": 0.0009,
+      "step": 200,
+      "train_nelbo": 7.06223201751709
+    },
+    {
+      "grad_norm": 0.9225335717201233,
+      "learning_rate": 0.0009,
+      "step": 250,
+      "train_nelbo": 6.833634376525879
+    },
+    {
+      "grad_norm": 1.776361107826233,
+      "learning_rate": 0.0009,
+      "step": 300,
+      "train_nelbo": 6.77846097946167
+    },
+    {
+      "grad_norm": 1.1720374822616577,
+      "learning_rate": 0.0009,
+      "step": 350,
+      "train_nelbo": 6.699256896972656
+    },
+    {
+      "grad_norm": 1.430587649345398,
+      "learning_rate": 0.0009,
+      "step": 400,
+      "train_nelbo": 6.496149063110352
+    },
+    {
+      "grad_norm": 1.0551713705062866,
+      "learning_rate": 0.0009,
+      "step": 450,
+      "train_nelbo": 6.30357551574707
+    },
+    {
+      "grad_norm": 1.0740824937820435,
+      "learning_rate": 0.0009,
+      "step": 500,
+      "train_nelbo": 6.40336275100708
+    },
+    {
+      "grad_norm": 0.8946284651756287,
+      "learning_rate": 0.0009,
+      "step": 550,
+      "train_nelbo": 6.087553024291992
+    },
+    {
+      "grad_norm": 1.0526989698410034,
+      "learning_rate": 0.0009,
+      "step": 600,
+      "train_nelbo": 6.0299763679504395
+    },
+    {
+      "grad_norm": 0.9826292991638184,
+      "learning_rate": 0.0009,
+      "step": 650,
+      "train_nelbo": 6.077252388000488
+    },
+    {
+      "grad_norm": 0.9472463130950928,
+      "learning_rate": 0.0009,
+      "step": 700,
+      "train_nelbo": 6.116616249084473
+    },
+    {
+      "grad_norm": 0.9359294176101685,
+      "learning_rate": 0.0009,
+      "step": 750,
+      "train_nelbo": 6.014341354370117
+    },
+    {
+      "grad_norm": 1.1631064414978027,
+      "learning_rate": 0.0009,
+      "step": 800,
+      "train_nelbo": 5.827846050262451
+    },
+    {
+      "grad_norm": 0.8764054179191589,
+      "learning_rate": 0.0009,
+      "step": 850,
+      "train_nelbo": 5.617988586425781
+    },
+    {
+      "grad_norm": 0.7102113962173462,
+      "learning_rate": 0.0006040268456375838,
+      "step": 900,
+      "train_nelbo": 5.903210639953613
+    },
+    {
+      "grad_norm": 1.2063456773757935,
+      "learning_rate": 0.0003020134228187919,
+      "step": 950,
+      "train_nelbo": 5.904695510864258
+    },
+    {
+      "grad_norm": 0.47120797634124756,
+      "learning_rate": 0.0,
+      "step": 1000,
+      "train_nelbo": 5.6342878341674805
+    }
+  ],
+  "training_duration_seconds": 54.318364368751645,
+  "training_flops_per_clean_token": 141003072,
+  "training_tokens_per_second": 603258.2236377285,
+  "val_masked_ce_t0.5": 5.698336616158485,
+  "val_nelbo": 5.734106943011284,
+  "wandb_run_id": "m10q4bde",
+  "wandb_url": "https://wandb.ai/y38283929-uc-berkeley-electrical-engineering-computer-sc/climbmix-isoflop-scaleup/runs/m10q4bde",
+  "warmup_fraction": 0.05,
+  "weight_decay": 0.1,
+  "world_size": 1
+}

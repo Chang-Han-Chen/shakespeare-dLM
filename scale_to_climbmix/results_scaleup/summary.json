@@ -1,0 +1,420 @@
+{
+  "batch_regimes": {
+    "historical": 64,
+    "scaleup": 128
+  },
+  "completed_probe_runs": 14,
+  "forecast_history": [
+    {
+      "budget": 3e+16,
+      "fitted_d_opt": 463231371.55254465,
+      "fitted_n_opt": 4416214.040218643,
+      "forecast_d_opt": 436543088.7674972,
+      "forecast_n_opt": 4303073.979448176,
+      "n_forecast_relative_error": -0.025619243030364003
+    },
+    {
+      "budget": 1e+17,
+      "fitted_d_opt": 729395840.3495312,
+      "fitted_n_opt": 9338047.38989171,
+      "forecast_d_opt": 721795000.0,
+      "forecast_n_opt": 8346285.0,
+      "n_forecast_relative_error": -0.10620661349023319
+    },
+    {
+      "budget": 3e+17,
+      "fitted_d_opt": 1567726897.3475502,
+      "fitted_n_opt": 13087313.710130824,
+      "forecast_d_opt": 1199210430.4396493,
+      "forecast_n_opt": 15536350.213468766,
+      "n_forecast_relative_error": 0.1871305722153016
+    },
+    {
+      "budget": 1e+18,
+      "fitted_d_opt": null,
+      "fitted_n_opt": null,
+      "forecast_d_opt": 2260898255.7594533,
+      "forecast_n_opt": 28228541.97347889,
+      "n_forecast_relative_error": null
+    }
+  ],
+  "forecast_rule": "rolling highest five bracketed optima",
+  "lr_decisions": {
+    "1e17": {
+      "accepted_relative_improvement": -0.019902207653085785,
+      "incumbent_lr": 0.0009,
+      "policy": "slow_decrease_after_4x_model_or_compute_probe",
+      "probe_lr": 0.0003,
+      "selected_lr": 0.0009,
+      "threshold": 0.01
+    },
+    "3e16": {
+      "accepted_relative_improvement": -0.009854387439431535,
+      "incumbent_lr": 0.0009,
+      "policy": "batch_transition_higher_lr_probe",
+      "probe_lr": 0.0027,
+      "selected_lr": 0.0009,
+      "threshold": 0.01
+    },
+    "3e17": {
+      "accepted_relative_improvement": null,
+      "incumbent_lr": 0.0009,
+      "policy": "no_probe_below_4x_model_or_compute_growth",
+      "probe_lr": null,
+      "selected_lr": 0.0009,
+      "threshold": 0.01
+    }
+  },
+  "profile_fit": "L2 quadratic through the measured minimum and its immediate neighbors in log10(N)",
+  "profiles": [
+    {
+      "budget": 100000000000000.0,
+      "coefficients": [
+        4.1949319286761755,
+        -45.09780609389322,
+        126.88490087697842
+      ],
+      "d_opt": 45679699.95354037,
+      "effective_n_opt": 182429.6863116209,
+      "fit_method": "lowest3_l2_quadratic_in_log10_n",
+      "fit_x_max": 5.702678633842677,
+      "fit_x_min": 5.139324850082506,
+      "l1_pseudo_r_squared": -0.26622467283089857,
+      "loss_min": 5.678398062270233,
+      "mean_absolute_error": 0.543914549255652,
+      "n_fit_points": 3,
+      "n_opt": 237286.31582820482,
+      "n_points": 5,
+      "parameter_token_ratio": 0.005194568179509553,
+      "support_indices": [
+        0,
+        1,
+        2
+      ],
+      "tokens_per_parameter": 192.50878329879103,
+      "x_max": 6.297877765718518,
+      "x_min": 5.139324850082506
+    },
+    {
+      "budget": 300000000000000.0,
+      "coefficients": [
+        1.4630810680416009,
+        -16.2785147916083,
+        50.71048019149992
+      ],
+      "d_opt": 79334982.393141,
+      "effective_n_opt": 315119.5001987094,
+      "fit_method": "lowest3_l2_quadratic_in_log10_n",
+      "fit_x_max": 5.984941158509398,
+      "fit_x_min": 5.458523029046602,
+      "l1_pseudo_r_squared": 0.7257282289089108,
+      "loss_min": 5.431026850047154,
+      "mean_absolute_error": 0.16149911725611027,
+      "n_fit_points": 3,
+      "n_opt": 365673.8642376225,
+      "n_points": 7,
+      "parameter_token_ratio": 0.004609238613371612,
+      "support_indices": [
+        1,
+        2,
+        3
+      ],
+      "tokens_per_parameter": 216.95557203286336,
+      "x_max": 6.901964575961948,
+      "x_min": 5.139324850082506
+    },
+    {
+      "budget": 1000000000000000.0,
+      "coefficients": [
+        1.4921590058372929,
+        -17.73343346099624,
+        57.71172923812355
+      ],
+      "d_opt": 95271273.02980325,
+      "effective_n_opt": 874695.2851912095,
+      "fit_method": "lowest3_l2_quadratic_in_log10_n",
+      "fit_x_max": 5.984941158509398,
+      "fit_x_min": 5.458523029046602,
+      "l1_pseudo_r_squared": 0.6898968695011404,
+      "loss_min": 5.023868714318262,
+      "mean_absolute_error": 0.1317315344588117,
+      "n_fit_points": 3,
+      "n_opt": 875399.6270223855,
+      "n_points": 6,
+      "parameter_token_ratio": 0.009188495116975486,
+      "support_indices": [
+        0,
+        1,
+        2
+      ],
+      "tokens_per_parameter": 108.83174962486818,
+      "x_max": 6.901964575961948,
+      "x_min": 5.458523029046602
+    },
+    {
+      "budget": 3000000000000000.0,
+      "coefficients": [
+        1.5332776625242195,
+        -18.587798084345586,
+        61.06001498454963
+      ],
+      "d_opt": 208856834.33800617,
+      "effective_n_opt": 1196992.1922469113,
+      "fit_method": "lowest3_l2_quadratic_in_log10_n",
+      "fit_x_max": 6.593314428183002,
+      "fit_x_min": 5.984941158509398,
+      "l1_pseudo_r_squared": 0.8635759464980437,
+      "loss_min": 4.725430898912137,
+      "mean_absolute_error": 0.04268339860952608,
+      "n_fit_points": 3,
+      "n_opt": 1152016.1817783222,
+      "n_points": 4,
+      "parameter_token_ratio": 0.005515817499723001,
+      "support_indices": [
+        0,
+        1,
+        2
+      ],
+      "tokens_per_parameter": 181.29678874440987,
+      "x_max": 6.901964575961948,
+      "x_min": 5.984941158509398
+    },
+    {
+      "budget": 1e+16,
+      "coefficients": [
+        1.2695768561503493,
+        -16.271807941023265,
+        56.5825859178426
+      ],
+      "d_opt": 270000967.312284,
+      "effective_n_opt": 3086408.695601069,
+      "fit_method": "lowest3_l2_quadratic_in_log10_n",
+      "fit_x_max": 6.901964575961948,
+      "fit_x_min": 6.297877765718518,
+      "l1_pseudo_r_squared": 0.9999999999999516,
+      "loss_min": 4.444794419264689,
+      "mean_absolute_error": 4.736951571734001e-15,
+      "n_fit_points": 3,
+      "n_opt": 2560700.358570015,
+      "n_points": 3,
+      "parameter_token_ratio": 0.009484041424223124,
+      "support_indices": [
+        0,
+        1,
+        2
+      ],
+      "tokens_per_parameter": 105.44028176067503,
+      "x_max": 6.901964575961948,
+      "x_min": 6.297877765718518
+    },
+    {
+      "budget": 3e+16,
+      "coefficients": [
+        1.8205976548334954,
+        -24.195925308108254,
+        84.5319136196358
+      ],
+      "d_opt": 463231371.55254465,
+      "effective_n_opt": 5396871.096232357,
+      "fit_method": "local_bracketing3_l2_quadratic_in_log10_n",
+      "loss_min": 4.14034550445335,
+      "n_fit_points": 3,
+      "n_opt": 4416214.040218643,
+      "n_points": 3,
+      "parameter_token_ratio": 0.009533495163372607,
+      "support_rmse": 8.605099862101871e-14,
+      "support_sizes": [
+        "3.4M",
+        "4.4M",
+        "5.6M"
+      ],
+      "tokens_per_parameter": 104.89332431215459
+    },
+    {
+      "budget": 1e+17,
+      "coefficients": [
+        0.6857637875109263,
+        -9.559898409922921,
+        37.19811465233149
+      ],
+      "d_opt": 729395840.3495312,
+      "effective_n_opt": 11424980.610445963,
+      "fit_method": "local_bracketing3_l2_quadratic_in_log10_n",
+      "loss_min": 3.8806446748902204,
+      "n_fit_points": 3,
+      "n_opt": 9338047.38989171,
+      "n_points": 3,
+      "parameter_token_ratio": 0.0128024412442726,
+      "support_rmse": 3.692088357856443e-14,
+      "support_sizes": [
+        "6.9M",
+        "8.5M",
+        "10.3M"
+      ],
+      "tokens_per_parameter": 78.11010266868968
+    },
+    {
+      "budget": 3e+17,
+      "coefficients": [
+        2.473743765611149,
+        -35.21052917372918,
+        128.9577560224385
+      ],
+      "d_opt": 1567726897.3475502,
+      "effective_n_opt": 15946655.021545975,
+      "fit_method": "local_bracketing3_l2_quadratic_in_log10_n",
+      "loss_min": 3.6637197191534483,
+      "n_fit_points": 3,
+      "n_opt": 13087313.710130824,
+      "n_points": 6,
+      "parameter_token_ratio": 0.008347955075768207,
+      "support_rmse": 6.665481691674458e-14,
+      "support_sizes": [
+        "10.3M",
+        "12.3M",
+        "15.5M"
+      ],
+      "tokens_per_parameter": 119.78981570022125
+    }
+  ],
+  "scaleup_profiles": [
+    {
+      "budget": 3e+16,
+      "coefficients": [
+        1.8205976548334954,
+        -24.195925308108254,
+        84.5319136196358
+      ],
+      "d_opt": 463231371.55254465,
+      "effective_n_opt": 5396871.096232357,
+      "fit_method": "local_bracketing3_l2_quadratic_in_log10_n",
+      "loss_min": 4.14034550445335,
+      "n_fit_points": 3,
+      "n_opt": 4416214.040218643,
+      "n_points": 3,
+      "parameter_token_ratio": 0.009533495163372607,
+      "support_rmse": 8.605099862101871e-14,
+      "support_sizes": [
+        "3.4M",
+        "4.4M",
+        "5.6M"
+      ],
+      "tokens_per_parameter": 104.89332431215459
+    },
+    {
+      "budget": 1e+17,
+      "coefficients": [
+        0.6857637875109263,
+        -9.559898409922921,
+        37.19811465233149
+      ],
+      "d_opt": 729395840.3495312,
+      "effective_n_opt": 11424980.610445963,
+      "fit_method": "local_bracketing3_l2_quadratic_in_log10_n",
+      "loss_min": 3.8806446748902204,
+      "n_fit_points": 3,
+      "n_opt": 9338047.38989171,
+      "n_points": 3,
+      "parameter_token_ratio": 0.0128024412442726,
+      "support_rmse": 3.692088357856443e-14,
+      "support_sizes": [
+        "6.9M",
+        "8.5M",
+        "10.3M"
+      ],
+      "tokens_per_parameter": 78.11010266868968
+    },
+    {
+      "budget": 3e+17,
+      "coefficients": [
+        2.473743765611149,
+        -35.21052917372918,
+        128.9577560224385
+      ],
+      "d_opt": 1567726897.3475502,
+      "effective_n_opt": 15946655.021545975,
+      "fit_method": "local_bracketing3_l2_quadratic_in_log10_n",
+      "loss_min": 3.6637197191534483,
+      "n_fit_points": 3,
+      "n_opt": 13087313.710130824,
+      "n_points": 6,
+      "parameter_token_ratio": 0.008347955075768207,
+      "support_rmse": 6.665481691674458e-14,
+      "support_sizes": [
+        "10.3M",
+        "12.3M",
+        "15.5M"
+      ],
+      "tokens_per_parameter": 119.78981570022125
+    }
+  ],
+  "scaling_laws": {
+    "all_budgets": {
+      "d_opt": {
+        "coefficient": 52.59661967777015,
+        "exponent": 0.42289233272497684,
+        "log_r_squared": 0.9860202623128305
+      },
+      "effective_n_opt": {
+        "coefficient": 0.0015843857237190608,
+        "exponent": 0.5771076672750216,
+        "log_r_squared": 0.9924444631175398
+      },
+      "loss_min": {
+        "coefficient": 34.62405697603175,
+        "exponent": -0.05585582070351602,
+        "log_r_squared": 0.9988453951457057
+      },
+      "n_opt": {
+        "coefficient": 0.012957134658983483,
+        "exponent": 0.517697240390571,
+        "log_r_squared": 0.9944512884193553
+      }
+    },
+    "batch128_only": {
+      "d_opt": {
+        "coefficient": 0.9042990844761131,
+        "exponent": 0.5270433639934754,
+        "log_r_squared": 0.9704629268909163
+      },
+      "effective_n_opt": {
+        "coefficient": 0.09215240263304746,
+        "exponent": 0.4729566360065228,
+        "log_r_squared": 0.9635810992206059
+      },
+      "loss_min": {
+        "coefficient": 31.06522399462717,
+        "exponent": -0.05312532637441778,
+        "log_r_squared": 0.9999387454679517
+      },
+      "n_opt": {
+        "coefficient": 0.0718883057420268,
+        "exponent": 0.4741937229495819,
+        "log_r_squared": 0.96478568868563
+      }
+    },
+    "rolling_highest5": {
+      "d_opt": {
+        "coefficient": 32.75196686125444,
+        "exponent": 0.4355024240502431,
+        "log_r_squared": 0.9687452249604773
+      },
+      "effective_n_opt": {
+        "coefficient": 0.0025443764548968707,
+        "exponent": 0.5644975759497552,
+        "log_r_squared": 0.9811590325389906
+      },
+      "loss_min": {
+        "coefficient": 34.78571836260318,
+        "exponent": -0.05598414087936057,
+        "log_r_squared": 0.9986984367944278
+      },
+      "n_opt": {
+        "coefficient": 0.006536460374730043,
+        "exponent": 0.5352969896847226,
+        "log_r_squared": 0.988534292299219
+      }
+    }
+  },
+  "selected_scaleup_runs": 12
+}

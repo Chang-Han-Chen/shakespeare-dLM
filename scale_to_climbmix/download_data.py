@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -29,6 +30,7 @@ RESOLVE_URL = (
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--verify-existing", action="store_true")
+    parser.add_argument("--workers", type=int, default=4)
     return parser.parse_args()
 
 
@@ -89,33 +91,41 @@ def download(entry: dict, destination: Path) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.workers < 1:
+        raise ValueError("workers must be positive")
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     entries = remote_entries()
     selected = sorted(set(VALIDATION_SHARDS + TRAIN_SHARDS))
-    manifest_entries = []
-    for position, index in enumerate(selected, start=1):
+
+    def fetch(index: int) -> dict:
         name = f"shard_{index:05d}.parquet"
         if name not in entries:
             raise FileNotFoundError(f"{name} not present in {DATASET_REPO}")
         destination = RAW_DIR / name
-        print(
-            f"[{position}/{len(selected)}] {name} "
-            f"{entries[name]['size'] / 1e6:.1f} MB",
-            flush=True,
-        )
         download(entries[name], destination)
         expected_sha = entries[name].get("lfs", {}).get("oid")
         if args.verify_existing and expected_sha and sha256(destination) != expected_sha:
             raise IOError(f"SHA256 mismatch for existing {name}")
-        manifest_entries.append(
-            {
-                "index": index,
-                "path": name,
-                "bytes": int(entries[name]["size"]),
-                "sha256": expected_sha,
-                "split": "validation" if index in VALIDATION_SHARDS else "train",
-            }
-        )
+        return {
+            "index": index,
+            "path": name,
+            "bytes": int(entries[name]["size"]),
+            "sha256": expected_sha,
+            "split": "validation" if index in VALIDATION_SHARDS else "train",
+        }
+
+    manifest_entries = []
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(fetch, index): index for index in selected}
+        for position, future in enumerate(as_completed(futures), start=1):
+            row = future.result()
+            manifest_entries.append(row)
+            print(
+                f"[{position}/{len(selected)}] {row['path']} "
+                f"{row['bytes'] / 1e6:.1f} MB",
+                flush=True,
+            )
+    manifest_entries.sort(key=lambda row: row["index"])
 
     payload = {
         "dataset": "NVIDIA Nemotron-ClimbMix",

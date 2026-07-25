@@ -11,6 +11,7 @@ import numpy as np
 import torch
 
 from analyze import fit_l1_quadratic
+from analyze_scaleup import fit_scaleup_profiles
 from config import (
     COMPUTE_BUDGETS,
     MASK_ID,
@@ -64,6 +65,24 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(spec.n_params, 9_692_032)
         self.assertEqual((spec.n_layer, spec.d_model, spec.n_head), (13, 224, 14))
         self.assertEqual(spec.head_dim, 16)
+
+    def test_first_scaleup_wave_configurations(self):
+        expected = {
+            "3.4M": (3_422_016, 9, 144, 9),
+            "4.4M": (4_411_840, 10, 160, 10),
+            "5.6M": (5_550_336, 11, 176, 11),
+            "6.9M": (6_886_272, 12, 192, 12),
+            "8.5M": (8_502_208, 13, 208, 13),
+            "10.3M": (10_296_384, 14, 224, 14),
+        }
+        for label, (n_params, n_layer, d_model, n_head) in expected.items():
+            spec = MODEL_BY_LABEL[label]
+            self.assertEqual(spec.n_params, n_params)
+            self.assertEqual(
+                (spec.n_layer, spec.d_model, spec.n_head),
+                (n_layer, d_model, n_head),
+            )
+            self.assertEqual(spec.head_dim, 16)
 
     def test_feasible_coverage(self):
         expected = [5, 7, 6, 4, 3]
@@ -229,6 +248,11 @@ class DataTests(unittest.TestCase):
             self.assertEqual(tuple(batch.shape), (64, 256))
             self.assertEqual(int(batch[0, 0]), 0)
             self.assertEqual(int(batch[-1, -1]), 16_383)
+            rank_batches = [
+                dataset.train_batch(0, 16, rank=rank, world_size=4)
+                for rank in range(4)
+            ]
+            self.assertTrue(torch.equal(torch.cat(rank_batches), batch))
             with self.assertRaises(IndexError):
                 dataset.train_batch(1, 64)
 
@@ -247,6 +271,25 @@ class ScheduleAndAnalysisTests(unittest.TestCase):
         coefficients, support = fit_l1_quadratic(x, y)
         self.assertTrue(np.allclose(coefficients, [1.0, -0.5, 1.25]))
         self.assertEqual(len(support), 3)
+
+    def test_scaleup_fit_uses_local_bracket(self):
+        rows = []
+        for n_params in (100, 200, 400, 800):
+            loss = (np.log10(n_params) - np.log10(200)) ** 2 + 1.0
+            if n_params == 800:
+                loss = 1.02
+            rows.append(
+                {
+                    "budget": 1e12,
+                    "size": str(n_params),
+                    "n_params": n_params,
+                    "val_nelbo": loss,
+                    "training_flops_per_clean_token": 12 * n_params,
+                }
+            )
+        fit = fit_scaleup_profiles(rows)[0]
+        self.assertEqual(fit["support_sizes"], ["100", "200", "400"])
+        self.assertAlmostEqual(fit["n_opt"], 200.0)
 
 
 if __name__ == "__main__":

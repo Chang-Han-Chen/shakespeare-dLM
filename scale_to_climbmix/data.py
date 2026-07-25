@@ -77,9 +77,19 @@ class ClimbMixData:
         tensor = torch.from_numpy(tokens.astype(np.int64, copy=False))
         return tensor.view(batch_size, SEQ_LEN)
 
-    def train_batch(self, step: int, batch_size: int) -> torch.Tensor:
+    def train_batch(
+        self,
+        step: int,
+        batch_size: int,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> torch.Tensor:
+        if not 0 <= rank < world_size:
+            raise ValueError(f"Invalid distributed rank {rank}/{world_size}")
         count = batch_size * SEQ_LEN
-        tokens = self.train.read(step * count, count)
+        # With local_batch * world_size equal to the historical global batch,
+        # concatenating ranks recovers exactly the same one-pass token prefix.
+        tokens = self.train.read((step * world_size + rank) * count, count)
         return self._tensor(tokens, batch_size).to(self.device, non_blocking=True)
 
     def autoregressive_train_batch(

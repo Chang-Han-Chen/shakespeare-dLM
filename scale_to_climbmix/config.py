@@ -16,14 +16,19 @@ TOKENIZER_META_PATH = DATA_ROOT / "tokenizer_meta.json"
 DATA_MANIFEST_PATH = TOKENIZED_DIR / "manifest.json"
 RESULTS_DIR = ROOT / "results"
 FIGURES_DIR = ROOT / "figures"
+WANDB_PROJECT = "climbmix-isoflop-scaleup"
 
 # NVIDIA's official files contain GPT-2 token IDs. This shuffled raw-text
 # conversion makes it practical to train and apply our own BPE tokenizer.
 DATASET_REPO = "karpathy/climbmix-400b-shuffle"
 DATASET_REVISION = "915333b4f8b8684f39aeaafea600fea6f43fb703"
 VALIDATION_SHARDS = (0,)
-TRAIN_SHARDS = tuple(range(1, 26))
+# Fifty raw-text shards provide about 3.2B tokens with the fixed 8K tokenizer.
+# This covers the predicted 1e18 optimum plus a downward model-size extension
+# without reusing training tokens.
+TRAIN_SHARDS = tuple(range(1, 51))
 TOKENIZER_TRAIN_SHARDS = (1, 2, 3, 4)
+MIN_PREPARED_TRAIN_TOKENS = 3_000_000_000
 
 # 8,192 ordinary/EOT tokens plus a diffusion-only [MASK] token.
 BASE_VOCAB_SIZE = 8_192
@@ -34,14 +39,19 @@ MASK_ID = BASE_VOCAB_SIZE
 
 SEQ_LEN = 256
 BLOCK_LEN = 4
+# Historical completed-study batch; keep this fixed for reproducing old runs.
 BATCH_SIZE = 64
 TOKENS_PER_STEP = BATCH_SIZE * SEQ_LEN
+# Scale-up runs use the larger global batch for better H100 utilization.
+SCALEUP_BATCH_SIZE = 128
+SCALEUP_TOKENS_PER_STEP = SCALEUP_BATCH_SIZE * SEQ_LEN
 
 FLOP_MULTIPLIER = 12
 COMPUTE_ACCOUNTING = "dense_dual_stream_attention_v1"
 COMPUTE_BUDGETS = (1e14, 3e14, 1e15, 3e15, 1e16)
 MIN_STEPS = 150
 MAX_STEPS = 25_000
+MAX_SCALEUP_STEPS = 200_000
 
 # Full-budget 3x sweeps. Boundary winners are extended until locally bracketed.
 LEARNING_RATES = (3e-4, 9e-4, 2.7e-3, 8.1e-3)
@@ -133,12 +143,34 @@ MODEL_SPECS = (
     ModelSpec("4M", n_layer=11, d_model=144, n_head=9),
     ModelSpec("8M", n_layer=12, d_model=208, n_head=13),
 )
+# First adaptive scale-up wave around the current 3e16 prediction (4.30M).
+# Keep these separate so the completed historical grid cannot change.
+SCALEUP_MODEL_SPECS = (
+    ModelSpec("3.4M", n_layer=9, d_model=144, n_head=9),
+    ModelSpec("4.4M", n_layer=10, d_model=160, n_head=10),
+    ModelSpec("5.6M", n_layer=11, d_model=176, n_head=11),
+    ModelSpec("6.9M", n_layer=12, d_model=192, n_head=12),
+    ModelSpec("8.5M", n_layer=13, d_model=208, n_head=13),
+    ModelSpec("10.3M", n_layer=14, d_model=224, n_head=14),
+    ModelSpec("12.3M", n_layer=15, d_model=240, n_head=15),
+    ModelSpec("15.5M", n_layer=17, d_model=256, n_head=16),
+    ModelSpec("19.1M", n_layer=19, d_model=272, n_head=17),
+    ModelSpec("22.3M", n_layer=20, d_model=288, n_head=18),
+    ModelSpec("24.3M", n_layer=22, d_model=288, n_head=18),
+    ModelSpec("28.1M", n_layer=23, d_model=304, n_head=19),
+    ModelSpec("35.3M", n_layer=24, d_model=336, n_head=21),
+)
 # Experimental extension for the fixed-token block-size study. It is kept out
 # of MODEL_SPECS so the completed 1/2/4/8M IsoFLOP grid cannot silently grow.
 EXPERIMENTAL_MODEL_SPECS = (
     ModelSpec("10M", n_layer=13, d_model=224, n_head=14),
 )
-ALL_MODEL_SPECS = MODEL_SPECS + EXPERIMENTAL_MODEL_SPECS
+ALL_MODEL_SPECS = tuple(
+    sorted(
+        MODEL_SPECS + SCALEUP_MODEL_SPECS + EXPERIMENTAL_MODEL_SPECS,
+        key=lambda spec: spec.n_params,
+    )
+)
 MODEL_BY_LABEL = {spec.label: spec for spec in ALL_MODEL_SPECS}
 
 
