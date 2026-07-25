@@ -31,9 +31,13 @@ def profiles_by_budget(summary: dict) -> dict[float, dict]:
 
 
 def main() -> None:
-    bd = profiles_by_budget(load(BD_SUMMARY))
+    bd_summary = load(BD_SUMMARY)
+    bd = profiles_by_budget(bd_summary)
     ar = profiles_by_budget(load(AR_SUMMARY))
     matched = profiles_by_budget(load(MATCHED_SUMMARY))
+    bd_scaleup_budgets = {
+        float(row["budget"]) for row in bd_summary["scaleup_profiles"]
+    }
     budgets = sorted(set(bd) & set(ar) & set(matched))
     if not budgets:
         raise ValueError("No common completed budgets")
@@ -44,6 +48,14 @@ def main() -> None:
         rows.append(
             {
                 "budget": budget,
+                "bd_batch_size": (
+                    bd_summary["batch_regimes"]["scaleup"]
+                    if budget in bd_scaleup_budgets
+                    else bd_summary["batch_regimes"]["historical"]
+                ),
+                "ar_batch_size": 128,
+                "matched_batch_size": 128,
+                "batch_sizes_match": budget in bd_scaleup_budgets,
                 "bd_n_opt": bd_row["n_opt"],
                 "bd_d_opt": bd_row["d_opt"],
                 "bd_d_over_n": bd_row["tokens_per_parameter"],
@@ -86,7 +98,10 @@ def main() -> None:
                 "rows": rows,
                 "note": (
                     "AR cross-entropy and BD NELBO are distinct objectives; "
-                    "only pure-BD and matched final NELBO are subtracted."
+                    "only pure-BD and matched final NELBO are subtracted. "
+                    "Pure-BD points through 1e16 use the refined historical "
+                    "batch-64 study, so batch-matched frontier comparisons "
+                    "begin at 3e16."
                 ),
             },
             indent=2,
@@ -139,19 +154,29 @@ def main() -> None:
     ratio_ax.set_ylabel("optimal D*/N*")
     ratio_ax.set_title("Token allocation")
 
-    gain_ax.semilogx(
-        compute,
-        [
-            100 * row["matched_relative_nelbo_improvement"]
-            for row in rows
-        ],
-        "o-",
+    gains = np.array(
+        [100 * row["matched_relative_nelbo_improvement"] for row in rows]
+    )
+    batch_matched = np.array([row["batch_sizes_match"] for row in rows])
+    gain_ax.semilogx(compute, gains, "-", color="#b35c1e")
+    gain_ax.scatter(
+        compute[~batch_matched],
+        gains[~batch_matched],
+        facecolors="none",
+        edgecolors="#b35c1e",
+        label="BD batch 64 vs matched batch 128",
+    )
+    gain_ax.scatter(
+        compute[batch_matched],
+        gains[batch_matched],
         color="#b35c1e",
+        label="both batch 128",
     )
     gain_ax.axhline(0, color="gray", linestyle=":", linewidth=1)
     gain_ax.set_xlabel("nominal training FLOPs C")
     gain_ax.set_ylabel("matched NELBO improvement over pure BD (%)")
     gain_ax.set_title("Matched-step frontier effect")
+    gain_ax.legend(frameon=False, fontsize=7)
 
     for axis in axes:
         axis.grid(alpha=0.2)
