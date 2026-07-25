@@ -16,8 +16,15 @@
     },
     {
       "budget": 3000000000000000.0,
-      "fitted_n_opt": null,
+      "fitted_n_opt": 1015465.6314924735,
       "forecast_n_opt": 1474838.7254051592,
+      "forecast_source": "power law over all finalized preceding profiles",
+      "n_forecast_relative_error": 0.45237680101248257
+    },
+    {
+      "budget": 1e+16,
+      "fitted_n_opt": null,
+      "forecast_n_opt": 1883235.398180012,
       "forecast_source": "power law over all finalized preceding profiles",
       "n_forecast_relative_error": null
     }
@@ -25,25 +32,42 @@
   "laws": {
     "all": {
       "d_opt": {
-        "coefficient": 6.833032688083658,
-        "exponent": 0.4833340014045472,
-        "log_r_squared": 0.9591932884768036
+        "coefficient": 14.664459388518072,
+        "exponent": 0.4604539289930602,
+        "log_r_squared": 0.9752348072899144
       },
       "loss_min": {
-        "coefficient": 26.96611382681135,
-        "exponent": -0.04900703839960079,
-        "log_r_squared": 0.9980305580592014
+        "coefficient": 27.183494327769203,
+        "exponent": -0.04924759426417251,
+        "log_r_squared": 0.9990186203929353
       },
       "n_opt": {
-        "coefficient": 0.38269846924471645,
-        "exponent": 0.4182529927303737,
-        "log_r_squared": 0.9632711884089292
+        "coefficient": 0.18691032017499554,
+        "exponent": 0.43972369976203324,
+        "log_r_squared": 0.9811281767203722
+      }
+    },
+    "rolling_highest5": {
+      "d_opt": {
+        "coefficient": 14.664459388518072,
+        "exponent": 0.4604539289930602,
+        "log_r_squared": 0.9752348072899144
+      },
+      "loss_min": {
+        "coefficient": 27.183494327769203,
+        "exponent": -0.04924759426417251,
+        "log_r_squared": 0.9990186203929353
+      },
+      "n_opt": {
+        "coefficient": 0.18691032017499554,
+        "exponent": 0.43972369976203324,
+        "log_r_squared": 0.9811281767203722
       }
     }
   },
   "loss_metric": "val_nelbo",
-  "n_selected_runs": 18,
-  "n_total_runs": 20,
+  "n_selected_runs": 22,
+  "n_total_runs": 24,
   "profiles": [
     {
       "budget": 100000000000000.0,
@@ -132,6 +156,28 @@
         "1.20M"
       ],
       "tokens_per_parameter": 232.3784079323745
+    },
+    {
+      "budget": 1e+16,
+      "coefficients": [
+        5.012246351440075,
+        -63.43607218989642,
+        205.14215851421923
+      ],
+      "d_opt": 324535207.7345354,
+      "fit_method": "local_bracketing3_l2_quadratic_in_log10_n",
+      "loss_min": 4.427001440706107,
+      "n_fit_points": 3,
+      "n_opt": 2128668.1992008793,
+      "n_points": 4,
+      "realized_compute_opt": 7834884773502325.0,
+      "realized_to_nominal_compute": 0.7834884773502325,
+      "support_sizes": [
+        "1.67M",
+        "2M",
+        "2.60M"
+      ],
+      "tokens_per_parameter": 152.45927376392842
     }
   ],
   "study": "matched"
