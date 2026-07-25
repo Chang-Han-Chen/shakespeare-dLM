@@ -195,6 +195,22 @@ def fit_laws(profiles: list[dict]) -> dict:
     return output
 
 
+def summarize_forecasts(history: list[dict]) -> dict:
+    errors = [
+        abs(float(row["n_forecast_relative_error"]))
+        for row in history
+        if row.get("n_forecast_relative_error") is not None
+    ]
+    if not errors:
+        return {}
+    return {
+        "n_finalized_forecasts": len(errors),
+        "mean_absolute_relative_error": float(np.mean(errors)),
+        "median_absolute_relative_error": float(np.median(errors)),
+        "fraction_within_25_percent": float(np.mean(np.array(errors) <= 0.25)),
+    }
+
+
 def make_figure(
     rows: list[dict],
     profiles: list[dict],
@@ -310,6 +326,7 @@ def main() -> None:
         "profiles": profiles,
         "laws": laws,
         "forecast_history": forecast_history,
+        "forecast_metrics": summarize_forecasts(forecast_history),
         "n_selected_runs": len(selected),
         "n_total_runs": len(all_rows),
     }
