@@ -203,19 +203,31 @@
     "selected_lr": 0.0027
   },
   "1e18/68.5M": {
-    "policy": "provisional lower neighborhood while final 3e17 bracket completes",
+    "policy": "measured winner after initial 1e18 neighborhood; adaptive lower extension required",
+    "selected_lr": 0.0027
+  },
+  "1e18/54.5M": {
+    "policy": "adaptive immediate lower neighbor after 68.5M boundary winner",
+    "selected_lr": 0.0027
+  },
+  "1e18/43.7M": {
+    "policy": "planned second lower neighbor if 54.5M does not bracket the minimum",
     "selected_lr": 0.0027
   },
   "1e18/85.8M": {
-    "policy": "updated rolling-law lower neighbor; pending paired lower-LR probe",
-    "selected_lr": 0.0027
+    "incumbent_lr": 0.0027,
+    "lower_lr": 0.0009,
+    "lower_lr_relative_improvement": 0.02026339326089721,
+    "policy": "3x lower LR after greater than 4x model growth; accept above 1%",
+    "selected_lr": 0.0009,
+    "threshold": 0.01
   },
   "1e18/107.7M": {
-    "policy": "updated rolling-law upper neighbor; pending 85.8M paired lower-LR decision",
-    "selected_lr": 0.0027
+    "policy": "repeat updated rolling-law upper neighbor at accepted 85.8M lower LR",
+    "selected_lr": 0.0009
   },
   "1e18/134.8M": {
-    "policy": "planned second upper neighbor; pending 85.8M paired lower-LR decision",
-    "selected_lr": 0.0027
+    "policy": "restart second upper neighbor at accepted 85.8M lower LR; obsolete incumbent stopped early",
+    "selected_lr": 0.0009
   }
 }

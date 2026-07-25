@@ -468,9 +468,13 @@ N_opt(C) = 24.65M * (C / 1e17)^0.548
 D_opt(C) = 0.635B * (C / 1e17)^0.461.
 ```
 
-It predicts about 87M at \(10^{18}\), where 68.5M/85.8M/107.7M are running.
-The model-size-triggered 85.8M LR comparison decides between `2.7e-3` and
-`9e-4` using the same 1% validation threshold.
+It predicted about 87M at \(10^{18}\). At the incumbent `2.7e-3`,
+68.5M/85.8M/107.7M measured 2.85163/2.86248/2.86609, leaving the profile
+unbracketed on its low side. The model-size-triggered 85.8M `9e-4` probe
+measured 2.80447, a 2.03% improvement, so it cleared the 1% validation
+threshold. The lower LR is propagated to 85.8M and larger models; 43.7M and
+54.5M remain below that transition and retain `2.7e-3`. Adaptive lower
+extensions and accepted-LR upper repeats are running.
 
 After that curve is complete, a separate batch-128 `p_AR=0.4` study holds
 pure-BD steps and tokens fixed, resets AdamW at the transition, and reports

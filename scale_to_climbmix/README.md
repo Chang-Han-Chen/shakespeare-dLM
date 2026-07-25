@@ -297,12 +297,17 @@ Pure AR is complete through `3e17`; the `1e18` neighborhood is running.
 
 The `3e17` prediction missed low, but the adaptive upper extension produced a
 43.7M/54.5M/68.5M bracket around the 52.0M fitted vertex. The resulting
-rolling-highest-five law predicts about 87M at `1e18`. AR retains `2.7e-3`
-through 68.5M; the scheduled same-size `2.7e-3` versus `9e-4` test is running
-at 85.8M. The lower rate will replace the incumbent only for at least 1%
-lower validation CE. The high-compute profiles are shallow: 43.7M and 54.5M
-differ by only 0.0041 CE at `3e17`, so the bracket is more trustworthy than
-the exact fitted vertex.
+rolling-highest-five law predicted about 87M at `1e18`. The measured
+68.5M/85.8M/107.7M losses at the incumbent `2.7e-3` were
+2.85163/2.86248/2.86609, so the initial neighborhood was unbracketed on its
+low side. The scheduled 85.8M `9e-4` probe reached 2.80447, a 2.03%
+improvement, and cleared the 1% threshold. Thus `2.7e-3` remains selected
+through 68.5M while 85.8M and larger models use `9e-4`. The 43.7M and 54.5M
+lower extensions and the 107.7M/134.8M accepted-LR repeats are running. The
+obsolete partial 134.8M incumbent run was stopped as soon as the LR decision
+was known. The high-compute profiles are shallow: 43.7M and 54.5M differ by
+only 0.0041 CE at `3e17`, so the bracket is more trustworthy than the exact
+fitted vertex.
 
 The subsequent fixed `p_AR=0.4` study matches the step count and clean-token
 count of a hypothetical batch-128 pure-BD run at each nominal `(C,N)`. It
