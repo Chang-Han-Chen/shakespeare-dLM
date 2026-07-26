@@ -91,5 +91,48 @@
   "n_full_bd_endpoints": 22,
   "selection_metric": "validation_block_diffusion_nelbo",
   "study": "25M_unique_tokens_50M_parameters",
+  "untuned_curriculum_seed_replicates": {
+    "ar_weight_decay": 0.1,
+    "bd_weight_decay": 0.1,
+    "mean_absolute_gap_curriculum_minus_full_bd": 0.004682749509811401,
+    "mean_curriculum_val_nelbo": 3.586960032582283,
+    "mean_full_bd_val_nelbo": 3.5822772830724716,
+    "mean_relative_gap_curriculum_minus_full_bd": 0.0013182757058770589,
+    "n_curriculum_wins": 1,
+    "n_seeds": 2,
+    "paired_gap_sign_consistent": false,
+    "rows": [
+      {
+        "absolute_gap_curriculum_minus_full_bd": 0.02147623896598816,
+        "curriculum_result_path": "results_data_efficiency/curriculum/ar_wd_0p1/result.json",
+        "curriculum_val_nelbo": 3.5952949449419975,
+        "curriculum_wandb_url": "https://wandb.ai/y38283929-uc-berkeley-electrical-engineering-computer-sc/climbmix-isoflop-scaleup/runs/zhgugs55",
+        "curriculum_world_size": 1,
+        "full_bd_result_path": "results_data_efficiency/full_bd/endpoints/epoch_100/result.json",
+        "full_bd_val_nelbo": 3.5738187059760094,
+        "full_bd_wandb_url": "https://wandb.ai/y38283929-uc-berkeley-electrical-engineering-computer-sc/climbmix-isoflop-scaleup/runs/hjanhjv7",
+        "full_bd_world_size": 1,
+        "relative_gap_curriculum_minus_full_bd": 0.006009325243632624,
+        "seed": 1337
+      },
+      {
+        "absolute_gap_curriculum_minus_full_bd": -0.012110739946365356,
+        "curriculum_result_path": "results_data_efficiency/replicates/seed_1338/curriculum_wd0p1/result.json",
+        "curriculum_val_nelbo": 3.5786251202225685,
+        "curriculum_wandb_url": "https://wandb.ai/y38283929-uc-berkeley-electrical-engineering-computer-sc/climbmix-isoflop-scaleup/runs/22gq6hcw",
+        "curriculum_world_size": 2,
+        "full_bd_result_path": "results_data_efficiency/replicates/seed_1338/full_bd/endpoint/result.json",
+        "full_bd_val_nelbo": 3.590735860168934,
+        "full_bd_wandb_url": "https://wandb.ai/y38283929-uc-berkeley-electrical-engineering-computer-sc/climbmix-isoflop-scaleup/runs/ual4gxon",
+        "full_bd_world_size": 2,
+        "relative_gap_curriculum_minus_full_bd": -0.003372773831878506,
+        "seed": 1338
+      }
+    ],
+    "seeds": [
+      1337,
+      1338
+    ]
+  },
   "validation_frequency": "decayed_endpoints_only"
 }

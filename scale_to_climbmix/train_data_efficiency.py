@@ -162,11 +162,6 @@ def validate_common(args: argparse.Namespace) -> None:
         raise ValueError("unique-tokens must be positive")
     if args.block_len < 1 or SEQ_LEN % args.block_len:
         raise ValueError("block-len must be a positive divisor of sequence length")
-    if (
-        args.command != "bd-trunk"
-        and int(os.environ.get("WORLD_SIZE", "1")) != 1
-    ):
-        raise ValueError("Only the shared full-BD trunk supports DDP")
 
 
 def build_data(
@@ -547,6 +542,7 @@ def run_bd_trunk(args: argparse.Namespace) -> None:
     config = {
         "study": "limited_data_efficiency",
         "schedule": "shared_bd_stable_trunk",
+        "seed": args.seed,
         "size": args.size,
         "n_params": spec.n_params,
         "unique_tokens": args.unique_tokens,
@@ -555,6 +551,7 @@ def run_bd_trunk(args: argparse.Namespace) -> None:
         "local_batch_size": local_batch_size,
         "world_size": distributed.world_size,
         "steps_per_epoch": fixed.steps_per_epoch,
+        "total_steps": total_steps,
         "target_epochs": args.epochs,
         "start_epoch": start_step / fixed.steps_per_epoch,
         "checkpoint_every_epochs": args.checkpoint_every,
@@ -689,8 +686,10 @@ def run_bd_trunk(args: argparse.Namespace) -> None:
 
 
 def run_bd_decay(args: argparse.Namespace) -> None:
-    device = configure_device(args.device)
+    distributed = initialize_distributed(args.device)
+    device = configure_device(str(distributed.device))
     dataset, fixed = build_data(args, device)
+    local_batch_size = fixed.local_batch_size(distributed.world_size)
     checkpoint = torch.load(
         args.checkpoint,
         map_location=device,
@@ -714,7 +713,12 @@ def run_bd_decay(args: argparse.Namespace) -> None:
         raise ValueError("decay-epochs must be positive")
     decay_steps = decay_epochs * fixed.steps_per_epoch
     set_seed(args.seed)
-    base_model, model = build_model(args, device)
+    base_model, model = build_model(
+        args,
+        device,
+        local_rank=distributed.local_rank,
+        world_size=distributed.world_size,
+    )
     base_model.load_state_dict(checkpoint["model_state"])
     optimizer = optimizer_for(
         model,
@@ -722,19 +726,34 @@ def run_bd_decay(args: argparse.Namespace) -> None:
         float(checkpoint["weight_decay"]),
     )
     optimizer.load_state_dict(checkpoint["optimizer_state"])
-    restore_rng_state(checkpoint["rng_state"], device)
+    checkpoint_rng_states = checkpoint.get(
+        "rng_states",
+        [checkpoint["rng_state"]],
+    )
+    if distributed.world_size > 1:
+        if len(checkpoint_rng_states) != distributed.world_size:
+            raise ValueError(
+                "Decay world size must match the trunk checkpoint world size"
+            )
+        restore_rng_state(
+            checkpoint_rng_states[distributed.rank],
+            device,
+        )
+    else:
+        restore_rng_state(checkpoint["rng_state"], device)
     spec = MODEL_BY_LABEL[args.size]
     total_steps = start_step + decay_steps
     config = {
         "study": "limited_data_efficiency",
         "schedule": "full_bd_checkpoint_proportional_decay",
+        "seed": args.seed,
         "size": args.size,
         "n_params": spec.n_params,
         "unique_tokens": args.unique_tokens,
         "fixed_data_selection": "training_split_prefix_from_offset_zero",
         "batch_size": args.batch_size,
-        "local_batch_size": args.batch_size,
-        "world_size": 1,
+        "local_batch_size": local_batch_size,
+        "world_size": distributed.world_size,
         "steps_per_epoch": fixed.steps_per_epoch,
         "checkpoint_epoch": checkpoint_epoch,
         "decay_epochs": decay_epochs,
@@ -749,10 +768,14 @@ def run_bd_decay(args: argparse.Namespace) -> None:
         "attention_backend": args.bd_attention_backend,
         "compute_accounting": COMPUTE_ACCOUNTING,
     }
-    run = wandb_init(
-        args,
-        job_type="data_efficiency_bd_decay",
-        config=config,
+    run = (
+        wandb_init(
+            args,
+            job_type="data_efficiency_bd_decay",
+            config=config,
+        )
+        if distributed.is_primary
+        else None
     )
     last_loss, training_duration, trace = train_bd_steps(
         model=model,
@@ -771,84 +794,95 @@ def run_bd_decay(args: argparse.Namespace) -> None:
         spec=spec,
         wandb_run=run,
         log_prefix=f"BD-decay@{checkpoint_epoch}",
+        rank=distributed.rank,
+        world_size=distributed.world_size,
     )
-    evaluation_started = time.monotonic()
-    val_nelbo, val_masked_ce = evaluate(
-        base_model,
-        dataset,
+    rng_states = gather_rng_states(
         device,
-        args.block_len,
+        distributed.world_size,
     )
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
-    evaluation_duration = time.monotonic() - evaluation_started
     endpoint = args.output.with_name(args.output.stem + "_checkpoint.pt")
-    atomic_torch_save(
-        {
-            **checkpoint_payload(
-                kind="full_bd_decayed_endpoint",
-                args=args,
-                base_model=base_model,
-                optimizer=optimizer,
-                fixed=fixed,
-                next_step=total_steps,
-                peak_lr=float(checkpoint["peak_lr"]),
-                weight_decay=float(checkpoint["weight_decay"]),
-                warmup_epochs=float(checkpoint["warmup_epochs"]),
-                wandb_run=run,
-                rng_states=[capture_rng_state(device)],
-                world_size=1,
+    if distributed.is_primary:
+        evaluation_started = time.monotonic()
+        val_nelbo, val_masked_ce = evaluate(
+            base_model,
+            dataset,
+            device,
+            args.block_len,
+        )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        evaluation_duration = time.monotonic() - evaluation_started
+        atomic_torch_save(
+            {
+                **checkpoint_payload(
+                    kind="full_bd_decayed_endpoint",
+                    args=args,
+                    base_model=base_model,
+                    optimizer=optimizer,
+                    fixed=fixed,
+                    next_step=total_steps,
+                    peak_lr=float(checkpoint["peak_lr"]),
+                    weight_decay=float(checkpoint["weight_decay"]),
+                    warmup_epochs=float(checkpoint["warmup_epochs"]),
+                    wandb_run=run,
+                    rng_states=rng_states,
+                    world_size=distributed.world_size,
+                ),
+                "source_checkpoint": str(args.checkpoint),
+                "checkpoint_epoch": checkpoint_epoch,
+                "decay_epochs": decay_epochs,
+            },
+            endpoint,
+        )
+        result = {
+            "status": "complete",
+            **config,
+            "last_train_nelbo": last_loss,
+            "val_nelbo": val_nelbo,
+            "val_masked_ce_t0.5": val_masked_ce,
+            "clean_token_exposures": total_steps * fixed.tokens_per_batch,
+            "training_duration_seconds": training_duration,
+            "evaluation_duration_seconds": evaluation_duration,
+            "accounted_h100_bf16_mfu": (
+                decay_steps
+                * fixed.tokens_per_batch
+                * spec.training_flops_per_clean_token
+                / training_duration
+                / (H100_BF16_FLOPS * distributed.world_size)
             ),
             "source_checkpoint": str(args.checkpoint),
-            "checkpoint_epoch": checkpoint_epoch,
-            "decay_epochs": decay_epochs,
-        },
-        endpoint,
-    )
-    result = {
-        "status": "complete",
-        **config,
-        "last_train_nelbo": last_loss,
-        "val_nelbo": val_nelbo,
-        "val_masked_ce_t0.5": val_masked_ce,
-        "clean_token_exposures": total_steps * fixed.tokens_per_batch,
-        "training_duration_seconds": training_duration,
-        "evaluation_duration_seconds": evaluation_duration,
-        "accounted_h100_bf16_mfu": (
-            decay_steps
-            * fixed.tokens_per_batch
-            * spec.training_flops_per_clean_token
-            / training_duration
-            / H100_BF16_FLOPS
-        ),
-        "source_checkpoint": str(args.checkpoint),
-        "endpoint_checkpoint": str(endpoint),
-        "train_trace": trace,
-        "wandb_run_id": run.id if run is not None else None,
-        "wandb_url": run.url if run is not None else None,
-    }
-    atomic_json_dump(result, args.output)
-    if run is not None:
-        run.summary.update(
-            {
-                "validation/nelbo": val_nelbo,
-                "validation/masked_ce_t0.5": val_masked_ce,
-                "train/duration_seconds": training_duration,
-                "validation/duration_seconds": evaluation_duration,
-                "performance/accounted_h100_bf16_mfu": (
-                    result["accounted_h100_bf16_mfu"]
-                ),
-                "result_path": str(args.output),
-                "endpoint_checkpoint": str(endpoint),
-            }
+            "endpoint_checkpoint": str(endpoint),
+            "train_trace": trace,
+            "wandb_run_id": run.id if run is not None else None,
+            "wandb_url": run.url if run is not None else None,
+        }
+        atomic_json_dump(result, args.output)
+        if run is not None:
+            run.summary.update(
+                {
+                    "validation/nelbo": val_nelbo,
+                    "validation/masked_ce_t0.5": val_masked_ce,
+                    "train/duration_seconds": training_duration,
+                    "validation/duration_seconds": evaluation_duration,
+                    "performance/accounted_h100_bf16_mfu": (
+                        result["accounted_h100_bf16_mfu"]
+                    ),
+                    "result_path": str(args.output),
+                    "endpoint_checkpoint": str(endpoint),
+                }
+            )
+            run.finish()
+        print(
+            f"complete BD endpoint checkpoint={checkpoint_epoch} "
+            f"decay={decay_epochs} "
+            f"total={config['total_horizon_epochs']:.1f} "
+            f"val_nelbo={val_nelbo:.5f}",
+            flush=True,
         )
-        run.finish()
-    print(
-        f"complete BD endpoint checkpoint={checkpoint_epoch} "
-        f"decay={decay_epochs} total={config['total_horizon_epochs']:.1f} "
-        f"val_nelbo={val_nelbo:.5f}",
-        flush=True,
-    )
+    if distributed.world_size > 1:
+        dist.barrier()
+        dist.destroy_process_group()
 
 
 def train_ar_phase(
@@ -862,11 +896,15 @@ def train_ar_phase(
     peak_lr: float,
     spec,
     wandb_run,
+    rank: int = 0,
+    world_size: int = 1,
 ) -> tuple[float, float, list[dict[str, Any]]]:
     model.train()
     log_interval = max(1, steps // 20)
     last_loss = math.nan
     trace: list[dict[str, Any]] = []
+    if world_size > 1:
+        dist.barrier()
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     started = time.monotonic()
@@ -874,7 +912,11 @@ def train_ar_phase(
         for step in range(steps):
             learning_rate = wsd_learning_rate(step, steps, peak_lr)
             set_optimizer_lr(optimizer, learning_rate)
-            inputs, targets = fixed.autoregressive_train_batch(step)
+            inputs, targets = fixed.autoregressive_train_batch(
+                step,
+                rank=rank,
+                world_size=world_size,
+            )
             with autocast_context(device):
                 loss = ar_cross_entropy(model(inputs), targets)
             optimizer.zero_grad(set_to_none=True)
@@ -887,7 +929,11 @@ def train_ar_phase(
             optimizer.step()
             completed = step + 1
             if step == 0 or completed % log_interval == 0 or completed == steps:
-                last_loss = float(loss.detach())
+                logged_loss = loss.detach()
+                if world_size > 1:
+                    dist.all_reduce(logged_loss, op=dist.ReduceOp.SUM)
+                    logged_loss = logged_loss / world_size
+                last_loss = float(logged_loss)
                 if not math.isfinite(last_loss):
                     raise FloatingPointError("Non-finite AR loss")
                 elapsed = time.monotonic() - started
@@ -896,7 +942,7 @@ def train_ar_phase(
                     * fixed.tokens_per_batch
                     * spec.flash_causal_training_flops_per_clean_token
                     / elapsed
-                    / H100_BF16_FLOPS
+                    / (H100_BF16_FLOPS * world_size)
                 )
                 record = {
                     "phase": "ar",
@@ -907,25 +953,26 @@ def train_ar_phase(
                     "grad_norm": float(grad_norm),
                     "accounted_h100_bf16_mfu": mfu,
                 }
-                trace.append(record)
-                print(
-                    f"AR {completed:>6}/{steps} ce={last_loss:.4f} "
-                    f"lr={learning_rate:.6g} mfu={100 * mfu:.1f}%",
-                    flush=True,
-                )
-                if wandb_run is not None:
-                    wandb_run.log(
-                        {
-                            "train/ar_ce": last_loss,
-                            "train/learning_rate": learning_rate,
-                            "train/grad_norm": float(grad_norm),
-                            "train/clean_tokens": (
-                                completed * fixed.tokens_per_batch
-                            ),
-                            "performance/ar_accounted_h100_bf16_mfu": mfu,
-                        },
-                        step=completed,
+                if rank == 0:
+                    trace.append(record)
+                    print(
+                        f"AR {completed:>6}/{steps} ce={last_loss:.4f} "
+                        f"lr={learning_rate:.6g} mfu={100 * mfu:.1f}%",
+                        flush=True,
                     )
+                    if wandb_run is not None:
+                        wandb_run.log(
+                            {
+                                "train/ar_ce": last_loss,
+                                "train/learning_rate": learning_rate,
+                                "train/grad_norm": float(grad_norm),
+                                "train/clean_tokens": (
+                                    completed * fixed.tokens_per_batch
+                                ),
+                                "performance/ar_accounted_h100_bf16_mfu": mfu,
+                            },
+                            step=completed,
+                        )
     if device.type == "cuda":
         torch.cuda.synchronize(device)
     return last_loss, time.monotonic() - started, trace
@@ -938,26 +985,34 @@ def run_curriculum(args: argparse.Namespace) -> None:
         raise ValueError("p-ar must be strictly between zero and one")
     if args.ar_weight_decay < 0.0 or args.bd_weight_decay < 0.0:
         raise ValueError("weight decay must be nonnegative")
-    device = configure_device(args.device)
+    distributed = initialize_distributed(args.device)
+    device = configure_device(str(distributed.device))
     dataset, fixed = build_data(args, device)
+    local_batch_size = fixed.local_batch_size(distributed.world_size)
     ar_steps = round(args.p_ar * args.total_steps)
     bd_steps = args.total_steps - ar_steps
     if ar_steps < 1 or bd_steps < 1:
         raise ValueError("both curriculum phases must be nonempty")
     spec = MODEL_BY_LABEL[args.size]
     set_seed(args.seed)
-    base_model, model = build_model(args, device)
+    base_model, model = build_model(
+        args,
+        device,
+        local_rank=distributed.local_rank,
+        world_size=distributed.world_size,
+    )
     config = {
         "study": "limited_data_efficiency",
         "schedule": "fixed_horizon_ar_to_bd",
         "comparison_mode": "exact_full_bd_selected_total_steps",
+        "seed": args.seed,
         "size": args.size,
         "n_params": spec.n_params,
         "unique_tokens": args.unique_tokens,
         "fixed_data_selection": "training_split_prefix_from_offset_zero",
         "batch_size": args.batch_size,
-        "local_batch_size": args.batch_size,
-        "world_size": 1,
+        "local_batch_size": local_batch_size,
+        "world_size": distributed.world_size,
         "steps_per_epoch": fixed.steps_per_epoch,
         "total_steps": args.total_steps,
         "total_horizon_epochs": args.total_steps / fixed.steps_per_epoch,
@@ -976,11 +1031,17 @@ def run_curriculum(args: argparse.Namespace) -> None:
         "bd_attention_backend": args.bd_attention_backend,
         "validation_only_at_endpoint": True,
     }
-    run = wandb_init(
-        args,
-        job_type="data_efficiency_curriculum",
-        config=config,
+    run = (
+        wandb_init(
+            args,
+            job_type="data_efficiency_curriculum",
+            config=config,
+        )
+        if distributed.is_primary
+        else None
     )
+    if distributed.world_size > 1:
+        set_seed(args.seed + distributed.rank)
     ar_optimizer = optimizer_for(
         model,
         args.ar_lr,
@@ -996,6 +1057,8 @@ def run_curriculum(args: argparse.Namespace) -> None:
         peak_lr=args.ar_lr,
         spec=spec,
         wandb_run=run,
+        rank=distributed.rank,
+        world_size=distributed.world_size,
     )
     del ar_optimizer
     bd_optimizer = optimizer_for(
@@ -1020,17 +1083,13 @@ def run_curriculum(args: argparse.Namespace) -> None:
         spec=spec,
         wandb_run=run,
         log_prefix="BD-curriculum",
+        rank=distributed.rank,
+        world_size=distributed.world_size,
     )
-    evaluation_started = time.monotonic()
-    val_nelbo, val_masked_ce = evaluate(
-        base_model,
-        dataset,
+    rng_states = gather_rng_states(
         device,
-        args.block_len,
+        distributed.world_size,
     )
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
-    evaluation_duration = time.monotonic() - evaluation_started
     realized_flops = fixed.tokens_per_batch * (
         ar_steps * spec.flash_causal_training_flops_per_clean_token
         + bd_steps * spec.training_flops_per_clean_token
@@ -1041,76 +1100,94 @@ def run_curriculum(args: argparse.Namespace) -> None:
         checkpoint_path = args.output.with_name(
             args.output.stem + "_checkpoint.pt"
         )
-    atomic_torch_save(
-        checkpoint_payload(
-            kind="fixed_horizon_curriculum_endpoint",
-            args=args,
-            base_model=base_model,
-            optimizer=bd_optimizer,
-            fixed=fixed,
-            next_step=args.total_steps,
-            peak_lr=args.bd_lr,
-            weight_decay=args.bd_weight_decay,
-            warmup_epochs=0.0,
-            wandb_run=run,
-            rng_states=[capture_rng_state(device)],
-            world_size=1,
-        ),
-        checkpoint_path,
-    )
-    result = {
-        "status": "complete",
-        **config,
-        "last_ar_train_ce": last_ar_loss,
-        "last_bd_train_nelbo": last_bd_loss,
-        "val_nelbo": val_nelbo,
-        "val_masked_ce_t0.5": val_masked_ce,
-        "clean_token_exposures": args.total_steps * fixed.tokens_per_batch,
-        "realized_flops": realized_flops,
-        "realized_to_full_bd_compute": (
-            realized_flops
-            / (
-                args.total_steps
-                * fixed.tokens_per_batch
-                * spec.training_flops_per_clean_token
-            )
-        ),
-        "ar_duration_seconds": ar_duration,
-        "bd_duration_seconds": bd_duration,
-        "training_duration_seconds": training_duration,
-        "evaluation_duration_seconds": evaluation_duration,
-        "accounted_h100_bf16_mfu": (
-            realized_flops / training_duration / H100_BF16_FLOPS
-        ),
-        "train_trace": ar_trace + bd_trace,
-        "endpoint_checkpoint": str(checkpoint_path),
-        "wandb_run_id": run.id if run is not None else None,
-        "wandb_url": run.url if run is not None else None,
-    }
-    atomic_json_dump(result, args.output)
-    if run is not None:
-        run.summary.update(
-            {
-                "validation/nelbo": val_nelbo,
-                "validation/masked_ce_t0.5": val_masked_ce,
-                "train/ar_duration_seconds": ar_duration,
-                "train/bd_duration_seconds": bd_duration,
-                "train/duration_seconds": training_duration,
-                "train/realized_flops": realized_flops,
-                "performance/accounted_h100_bf16_mfu": (
-                    result["accounted_h100_bf16_mfu"]
-                ),
-                "result_path": str(args.output),
-                "endpoint_checkpoint": str(checkpoint_path),
-            }
+    if distributed.is_primary:
+        evaluation_started = time.monotonic()
+        val_nelbo, val_masked_ce = evaluate(
+            base_model,
+            dataset,
+            device,
+            args.block_len,
         )
-        run.finish()
-    print(
-        f"complete curriculum wd={args.ar_weight_decay:g} "
-        f"horizon={config['total_horizon_epochs']:.1f} "
-        f"val_nelbo={val_nelbo:.5f}",
-        flush=True,
-    )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        evaluation_duration = time.monotonic() - evaluation_started
+        atomic_torch_save(
+            checkpoint_payload(
+                kind="fixed_horizon_curriculum_endpoint",
+                args=args,
+                base_model=base_model,
+                optimizer=bd_optimizer,
+                fixed=fixed,
+                next_step=args.total_steps,
+                peak_lr=args.bd_lr,
+                weight_decay=args.bd_weight_decay,
+                warmup_epochs=0.0,
+                wandb_run=run,
+                rng_states=rng_states,
+                world_size=distributed.world_size,
+            ),
+            checkpoint_path,
+        )
+        result = {
+            "status": "complete",
+            **config,
+            "last_ar_train_ce": last_ar_loss,
+            "last_bd_train_nelbo": last_bd_loss,
+            "val_nelbo": val_nelbo,
+            "val_masked_ce_t0.5": val_masked_ce,
+            "clean_token_exposures": (
+                args.total_steps * fixed.tokens_per_batch
+            ),
+            "realized_flops": realized_flops,
+            "realized_to_full_bd_compute": (
+                realized_flops
+                / (
+                    args.total_steps
+                    * fixed.tokens_per_batch
+                    * spec.training_flops_per_clean_token
+                )
+            ),
+            "ar_duration_seconds": ar_duration,
+            "bd_duration_seconds": bd_duration,
+            "training_duration_seconds": training_duration,
+            "evaluation_duration_seconds": evaluation_duration,
+            "accounted_h100_bf16_mfu": (
+                realized_flops
+                / training_duration
+                / (H100_BF16_FLOPS * distributed.world_size)
+            ),
+            "train_trace": ar_trace + bd_trace,
+            "endpoint_checkpoint": str(checkpoint_path),
+            "wandb_run_id": run.id if run is not None else None,
+            "wandb_url": run.url if run is not None else None,
+        }
+        atomic_json_dump(result, args.output)
+        if run is not None:
+            run.summary.update(
+                {
+                    "validation/nelbo": val_nelbo,
+                    "validation/masked_ce_t0.5": val_masked_ce,
+                    "train/ar_duration_seconds": ar_duration,
+                    "train/bd_duration_seconds": bd_duration,
+                    "train/duration_seconds": training_duration,
+                    "train/realized_flops": realized_flops,
+                    "performance/accounted_h100_bf16_mfu": (
+                        result["accounted_h100_bf16_mfu"]
+                    ),
+                    "result_path": str(args.output),
+                    "endpoint_checkpoint": str(checkpoint_path),
+                }
+            )
+            run.finish()
+        print(
+            f"complete curriculum wd={args.ar_weight_decay:g} "
+            f"horizon={config['total_horizon_epochs']:.1f} "
+            f"val_nelbo={val_nelbo:.5f}",
+            flush=True,
+        )
+    if distributed.world_size > 1:
+        dist.barrier()
+        dist.destroy_process_group()
 
 
 def main() -> None:

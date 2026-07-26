@@ -58,6 +58,97 @@ def compact(row: dict | None) -> dict | None:
     }
 
 
+def load_seed_replicates(
+    best_full_bd: dict,
+    curricula: list[dict],
+) -> list[dict]:
+    plan = json.loads((RESULTS / "plan.json").read_text())
+    original_curriculum = next(
+        (
+            row
+            for row in curricula
+            if row["ar_weight_decay"] == 0.1
+        ),
+        None,
+    )
+    rows = []
+    if original_curriculum is not None:
+        rows.append(
+            {
+                "seed": plan["seed"],
+                "full_bd_val_nelbo": best_full_bd["val_nelbo"],
+                "curriculum_val_nelbo": original_curriculum["val_nelbo"],
+                "full_bd_world_size": best_full_bd["world_size"],
+                "curriculum_world_size": original_curriculum["world_size"],
+                "full_bd_result_path": best_full_bd["result_path"],
+                "curriculum_result_path": (
+                    original_curriculum["result_path"]
+                ),
+                "full_bd_wandb_url": best_full_bd["wandb_url"],
+                "curriculum_wandb_url": original_curriculum["wandb_url"],
+            }
+        )
+
+    for seed_directory in sorted((RESULTS / "replicates").glob("seed_*")):
+        full_bd_path = seed_directory / "full_bd" / "endpoint" / "result.json"
+        curriculum_path = (
+            seed_directory / "curriculum_wd0p1" / "result.json"
+        )
+        if not full_bd_path.exists() or not curriculum_path.exists():
+            continue
+        full_bd = json.loads(full_bd_path.read_text())
+        curriculum = json.loads(curriculum_path.read_text())
+        if (
+            full_bd.get("status") != "complete"
+            or curriculum.get("status") != "complete"
+        ):
+            continue
+        seed = int(seed_directory.name.removeprefix("seed_"))
+        if full_bd["seed"] != seed or curriculum["seed"] != seed:
+            raise RuntimeError(f"Seed metadata mismatch in {seed_directory}")
+        if full_bd["total_steps"] != best_full_bd["total_steps"]:
+            raise RuntimeError(
+                f"Full-BD replicate seed {seed} has the wrong horizon"
+            )
+        if curriculum["total_steps"] != best_full_bd["total_steps"]:
+            raise RuntimeError(
+                f"Curriculum replicate seed {seed} has the wrong horizon"
+            )
+        if (
+            curriculum["p_ar"] != 0.4
+            or curriculum["ar_weight_decay"] != 0.1
+            or curriculum["bd_weight_decay"] != 0.1
+        ):
+            raise RuntimeError(
+                f"Curriculum replicate seed {seed} is not the untuned setting"
+            )
+        rows.append(
+            {
+                "seed": seed,
+                "full_bd_val_nelbo": full_bd["val_nelbo"],
+                "curriculum_val_nelbo": curriculum["val_nelbo"],
+                "full_bd_world_size": full_bd["world_size"],
+                "curriculum_world_size": curriculum["world_size"],
+                "full_bd_result_path": str(full_bd_path.relative_to(ROOT)),
+                "curriculum_result_path": str(
+                    curriculum_path.relative_to(ROOT)
+                ),
+                "full_bd_wandb_url": full_bd["wandb_url"],
+                "curriculum_wandb_url": curriculum["wandb_url"],
+            }
+        )
+
+    for row in rows:
+        row["absolute_gap_curriculum_minus_full_bd"] = (
+            row["curriculum_val_nelbo"] - row["full_bd_val_nelbo"]
+        )
+        row["relative_gap_curriculum_minus_full_bd"] = (
+            row["curriculum_val_nelbo"] / row["full_bd_val_nelbo"] - 1.0
+        )
+    rows.sort(key=lambda row: row["seed"])
+    return rows
+
+
 def main() -> None:
     full_bd = load_complete("full_bd/endpoints/epoch_*/result.json")
     curricula = load_complete("curriculum/ar_wd_*/result.json")
@@ -81,6 +172,7 @@ def main() -> None:
         if curricula
         else None
     )
+    seed_replicates = load_seed_replicates(best, curricula)
 
     summary = {
         "study": "25M_unique_tokens_50M_parameters",
@@ -102,11 +194,56 @@ def main() -> None:
         summary["best_curriculum_relative_gap"] = (
             best_curriculum["val_nelbo"] / best["val_nelbo"] - 1.0
         )
+    if seed_replicates:
+        mean_full_bd = sum(
+            row["full_bd_val_nelbo"] for row in seed_replicates
+        ) / len(seed_replicates)
+        mean_curriculum = sum(
+            row["curriculum_val_nelbo"] for row in seed_replicates
+        ) / len(seed_replicates)
+        mean_absolute_gap = sum(
+            row["absolute_gap_curriculum_minus_full_bd"]
+            for row in seed_replicates
+        ) / len(seed_replicates)
+        mean_relative_gap = sum(
+            row["relative_gap_curriculum_minus_full_bd"]
+            for row in seed_replicates
+        ) / len(seed_replicates)
+        summary["untuned_curriculum_seed_replicates"] = {
+            "ar_weight_decay": 0.1,
+            "bd_weight_decay": 0.1,
+            "seeds": [row["seed"] for row in seed_replicates],
+            "n_seeds": len(seed_replicates),
+            "mean_full_bd_val_nelbo": mean_full_bd,
+            "mean_curriculum_val_nelbo": mean_curriculum,
+            "mean_absolute_gap_curriculum_minus_full_bd": (
+                mean_absolute_gap
+            ),
+            "mean_relative_gap_curriculum_minus_full_bd": (
+                mean_relative_gap
+            ),
+            "n_curriculum_wins": sum(
+                row["absolute_gap_curriculum_minus_full_bd"] < 0.0
+                for row in seed_replicates
+            ),
+            "paired_gap_sign_consistent": (
+                all(
+                    row["absolute_gap_curriculum_minus_full_bd"] > 0.0
+                    for row in seed_replicates
+                )
+                or all(
+                    row["absolute_gap_curriculum_minus_full_bd"] < 0.0
+                    for row in seed_replicates
+                )
+            ),
+            "rows": seed_replicates,
+        }
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     FIGURES.mkdir(parents=True, exist_ok=True)
     write_csv(RESULTS / "full_bd_endpoints.csv", full_bd)
     write_csv(RESULTS / "curriculum_weight_decay.csv", curricula)
+    write_csv(RESULTS / "untuned_seed_replicates.csv", seed_replicates)
     (RESULTS / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n"
     )
@@ -179,6 +316,50 @@ def main() -> None:
             bbox_inches="tight",
         )
     plt.close(figure)
+
+    if seed_replicates:
+        repeat_figure, repeat_axes = plt.subplots(1, 2, figsize=(9.8, 4.0))
+        colors = ("#2878b5", "#e24a33", "#59a14f", "#b279a2")
+        for index, row in enumerate(seed_replicates):
+            repeat_axes[0].plot(
+                (0, 1),
+                (
+                    row["full_bd_val_nelbo"],
+                    row["curriculum_val_nelbo"],
+                ),
+                "o-",
+                color=colors[index % len(colors)],
+                label=f"seed {row['seed']}",
+            )
+        repeat_axes[0].set_xticks((0, 1), ("full BD", r"$p_{\mathrm{AR}}=0.4$"))
+        repeat_axes[0].set_ylabel("validation block-diffusion NELBO")
+        repeat_axes[0].set_title("Untuned WD=0.1 paired repeats")
+        repeat_axes[0].legend(frameon=False)
+
+        repeat_axes[1].axhline(0.0, color="black", linewidth=1.0)
+        repeat_axes[1].bar(
+            [str(row["seed"]) for row in seed_replicates],
+            [
+                100.0 * row["relative_gap_curriculum_minus_full_bd"]
+                for row in seed_replicates
+            ],
+            color=[
+                colors[index % len(colors)]
+                for index in range(len(seed_replicates))
+            ],
+        )
+        repeat_axes[1].set_xlabel("seed")
+        repeat_axes[1].set_ylabel("curriculum gap to full BD (%)")
+        repeat_axes[1].set_title("Paired gap changes sign")
+        for axis in repeat_axes:
+            axis.grid(alpha=0.2)
+        repeat_figure.tight_layout()
+        for extension in ("png", "pdf"):
+            repeat_figure.savefig(
+                FIGURES / f"data_efficiency_seed_replicates.{extension}",
+                bbox_inches="tight",
+            )
+        plt.close(repeat_figure)
     print(json.dumps(summary, indent=2))
 
 

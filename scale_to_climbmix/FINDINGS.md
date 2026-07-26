@@ -653,6 +653,36 @@ validation batches and stratified masks for every model.
 
 ![Limited-data efficiency result](figures_data_efficiency/data_efficiency_25m_50m.png)
 
+#### Untuned seed repeat
+
+The seed-1338 repeat fixed every selected quantity from seed 1337: full BD
+used the epoch-100 trunk plus 20 decay epochs, and the WD=0.1 curriculum
+used the same 36,624 AR plus 54,936 BD steps. LRs remained
+`2.7e-3`/`9e-4`; no LR, horizon, or WD tuning was performed.
+
+| seed | full-BD NELBO | curriculum WD=0.1 NELBO | absolute gap | relative gap |
+|---:|---:|---:|---:|---:|
+| 1337 | 3.57382 | 3.59529 | +0.02148 | +0.60% |
+| 1338 | 3.59074 | 3.57863 | -0.01211 | -0.34% |
+| mean | 3.58228 | 3.58696 | +0.00468 | +0.13% |
+
+The paired gap changes sign: the original untuned curriculum penalty does
+not replicate. Across these two seeds, full BD and the untuned curriculum
+are effectively tied. This does not invalidate the seed-1337 WD sweep, but
+it means the apparent 1.34% WD=0.4 gain is still a single-seed result and
+needs its own repeat.
+
+Seed 1338 used two-GPU DDP for both conditions with local batch 64 and
+unchanged global batch 128. The curriculum completed in 1.90 hours at
+12.33% accounted MFU per GPU; its AR and BD phases took 0.45 and 1.45
+hours. The full-BD 100-epoch trunk plus 20-epoch decay took 2.42 hours at
+12.46% and 12.33% MFU per GPU. DDP changes the rank-local corruption RNG
+streams relative to seed 1337, so the two runs are not bitwise-comparable,
+although each within-seed pair uses matched topology, data, batch, and
+steps.
+
+![Untuned curriculum paired repeats](figures_data_efficiency/data_efficiency_seed_replicates.png)
+
 ## What we can and cannot conclude
 
 ### Supported by the current experiments
@@ -673,10 +703,12 @@ validation batches and stratified masks for every model.
   loss by less than 0.2%.
 - The one-shot \(10^{19}\), 176M run reached NELBO 3.00472, 2.04% below the
   preferred rolling-four loss forecast, at 18.14% accounted four-H100 MFU.
-- With 25M unique tokens and a fixed 120-epoch horizon, increasing
-  curriculum AR weight decay from 0.1 to 0.4 improves validation NELBO from
-  3.59529 to 3.52605. This is 1.34% better than the selected full-BD
-  endpoint; weight decay 0.8 closes the bracket on the high side.
+- At seed 1337, increasing curriculum AR weight decay from 0.1 to 0.4
+  improves validation NELBO from 3.59529 to 3.52605. This is 1.34% better
+  than full BD, and weight decay 0.8 closes the bracket on the high side.
+- The untuned WD=0.1 curriculum gap changes from 0.60% worse at seed 1337 to
+  0.34% better at seed 1338. Its two-seed mean gap is only 0.13% worse, so
+  the original default-WD penalty is not robust to this repeat.
 
 ### Not yet established
 
@@ -686,9 +718,8 @@ validation batches and stratified masks for every model.
   one budget.
 - Whether preserving or transforming optimizer state eliminates the
   transition cost.
-- Whether the limited-data AR-weight-decay result survives repeated seeds,
-  other model/data sizes, or jointly tuning the full-BD baseline's weight
-  decay.
+- Whether the seed-1337 WD=0.4 improvement survives a paired repeat, other
+  model/data sizes, or jointly tuning the full-BD baseline's weight decay.
 - Whether 176M is the \(10^{19}\) compute-optimal model size; one point does
   not localize an IsoFLOP minimum.
 - How much of the favorable \(10^{19}\) loss residual comes from scale versus
@@ -699,9 +730,9 @@ validation batches and stratified masks for every model.
 1. Before interpreting sub-1% scaling-frontier differences causally, repeat the
    \(3\cdot10^{17}\) compute-optimal \(p_{\mathrm{AR}}=0.15\) and 0.4 points
    with multiple seeds.
-2. Repeat the limited-data full-BD and AR-weight-decay comparison across
-   seeds, then test whether its 0.4 optimum transfers to another unique-token
-   budget or model size.
+2. Repeat the limited-data WD=0.4 curriculum at seed 1338 before treating
+   its seed-1337 gain as a regularization effect, then test transfer to
+   another unique-token budget or model size.
 3. Test optimizer-state transition mechanics only if the seed repeats show a
    stable curriculum gap.
 
@@ -733,3 +764,5 @@ validation batches and stratified masks for every model.
   `results_data_efficiency/full_bd_endpoints.csv`,
   `results_data_efficiency/curriculum_weight_decay.csv`, and
   `results_data_efficiency/summary.json`
+- Untuned paired-seed comparison:
+  `results_data_efficiency/untuned_seed_replicates.csv`

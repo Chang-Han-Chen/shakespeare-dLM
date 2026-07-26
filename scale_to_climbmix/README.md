@@ -178,6 +178,25 @@ All trunk, decay-endpoint, and curriculum runs are logged in W&B.
 
 ![Limited-data efficiency result](figures_data_efficiency/data_efficiency_25m_50m.png)
 
+A paired repeat at seed 1338 reused the selected 100+20 full-BD schedule,
+the exact 91,560-step curriculum horizon, and all fixed LRs. No LR, horizon,
+or weight-decay selection was repeated:
+
+| seed | full-BD NELBO | curriculum WD=0.1 NELBO | curriculum gap |
+|---:|---:|---:|---:|
+| 1337 | 3.57382 | 3.59529 | +0.60% |
+| 1338 | 3.59074 | 3.57863 | -0.34% |
+| mean | 3.58228 | 3.58696 | +0.13% |
+
+The default-WD gap changes sign and averages only 0.00468 NELBO, so the
+original 0.60% curriculum penalty is not replicated. With two seeds, the
+untuned conditions are effectively tied; the WD=0.4 improvement remains a
+single-seed finding. Seed 1338 used two-GPU DDP for both conditions at the
+same global batch 128. Its curriculum completed in 1.90 hours, versus 3.41
+hours for the earlier one-GPU runs, at 12.33% accounted MFU per GPU.
+
+![Untuned curriculum paired repeats](figures_data_efficiency/data_efficiency_seed_replicates.png)
+
 ## Pure-BD IsoFLOP result
 
 The initial 1/2/4/8M grid was adaptively extended downward because the first
