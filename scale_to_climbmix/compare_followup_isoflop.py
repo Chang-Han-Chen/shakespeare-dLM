@@ -35,6 +35,9 @@ def main() -> None:
     bd = profiles_by_budget(bd_summary)
     ar = profiles_by_budget(load(AR_SUMMARY))
     matched = profiles_by_budget(load(MATCHED_SUMMARY))
+    bd_batch128_loss_law = bd_summary["scaling_laws"]["batch128_only"][
+        "loss_min"
+    ]
     bd_scaleup_budgets = {
         float(row["budget"]) for row in bd_summary["scaleup_profiles"]
     }
@@ -45,6 +48,15 @@ def main() -> None:
     rows = []
     for budget in budgets:
         bd_row, ar_row, matched_row = bd[budget], ar[budget], matched[budget]
+        batch_sizes_match = budget in bd_scaleup_budgets
+        matched_realized_compute = matched_row["realized_compute_opt"]
+        bd_nelbo_at_realized_compute = None
+        if batch_sizes_match:
+            bd_nelbo_at_realized_compute = (
+                bd_batch128_loss_law["coefficient"]
+                * matched_realized_compute
+                ** bd_batch128_loss_law["exponent"]
+            )
         rows.append(
             {
                 "budget": budget,
@@ -55,7 +67,7 @@ def main() -> None:
                 ),
                 "ar_batch_size": 128,
                 "matched_batch_size": 128,
-                "batch_sizes_match": budget in bd_scaleup_budgets,
+                "batch_sizes_match": batch_sizes_match,
                 "bd_n_opt": bd_row["n_opt"],
                 "bd_d_opt": bd_row["d_opt"],
                 "bd_d_over_n": bd_row["tokens_per_parameter"],
@@ -75,12 +87,32 @@ def main() -> None:
                     (bd_row["loss_min"] - matched_row["loss_min"])
                     / bd_row["loss_min"]
                 ),
-                "matched_realized_compute": matched_row[
-                    "realized_compute_opt"
-                ],
+                "matched_realized_compute": matched_realized_compute,
                 "matched_realized_to_nominal_compute": matched_row[
                     "realized_to_nominal_compute"
                 ],
+                "bd_predicted_nelbo_at_matched_realized_compute": (
+                    bd_nelbo_at_realized_compute
+                ),
+                "matched_realized_compute_adjusted_nelbo_improvement": (
+                    None
+                    if bd_nelbo_at_realized_compute is None
+                    else (
+                        bd_nelbo_at_realized_compute
+                        - matched_row["loss_min"]
+                    )
+                ),
+                "matched_realized_compute_adjusted_relative_nelbo_improvement": (
+                    None
+                    if bd_nelbo_at_realized_compute is None
+                    else (
+                        (
+                            bd_nelbo_at_realized_compute
+                            - matched_row["loss_min"]
+                        )
+                        / bd_nelbo_at_realized_compute
+                    )
+                ),
             }
         )
 
@@ -101,8 +133,12 @@ def main() -> None:
                     "only pure-BD and matched final NELBO are subtracted. "
                     "Pure-BD points through 1e16 use the refined historical "
                     "batch-64 study, so batch-matched frontier comparisons "
-                    "begin at 3e16."
+                    "begin at 3e16. Realized-compute-adjusted gains compare "
+                    "matched NELBO with the batch-128 pure-BD loss law at "
+                    "the mixed run's realized FLOPs; the 3e16 value is a "
+                    "short extrapolation below the measured batch-128 range."
                 ),
+                "bd_batch128_loss_law": bd_batch128_loss_law,
             },
             indent=2,
             sort_keys=True,
@@ -170,7 +206,28 @@ def main() -> None:
         compute[batch_matched],
         gains[batch_matched],
         color="#b35c1e",
-        label="both batch 128",
+        label="nominal: both batch 128",
+    )
+    realized_gains = np.array(
+        [
+            np.nan
+            if row[
+                "matched_realized_compute_adjusted_relative_nelbo_improvement"
+            ]
+            is None
+            else 100
+            * row[
+                "matched_realized_compute_adjusted_relative_nelbo_improvement"
+            ]
+            for row in rows
+        ]
+    )
+    gain_ax.semilogx(
+        compute[batch_matched],
+        realized_gains[batch_matched],
+        "s--",
+        color="#2b8c6b",
+        label="at realized FLOPs (BD law)",
     )
     gain_ax.axhline(0, color="gray", linestyle=":", linewidth=1)
     gain_ax.set_xlabel("nominal training FLOPs C")
