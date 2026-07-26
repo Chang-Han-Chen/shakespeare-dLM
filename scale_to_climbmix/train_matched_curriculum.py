@@ -39,7 +39,7 @@ from train import (
 from train_ar import ar_cross_entropy
 
 
-P_AR = 0.4
+DEFAULT_P_AR = 0.4
 
 
 def parse_args():
@@ -48,6 +48,12 @@ def parse_args():
     parser.add_argument("--size", choices=tuple(MODEL_BY_LABEL), required=True)
     parser.add_argument("--ar-lr", type=float, required=True)
     parser.add_argument("--bd-lr", type=float, required=True)
+    parser.add_argument(
+        "--p-ar",
+        type=float,
+        default=DEFAULT_P_AR,
+        help="Fraction of matched steps assigned to the AR phase",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--steps", type=int, default=None, help="Test/benchmark override")
     parser.add_argument("--batch-size", type=int, default=SCALEUP_BATCH_SIZE)
@@ -84,6 +90,8 @@ def main() -> None:
     args = parse_args()
     if args.batch_size < 1:
         raise ValueError("batch-size must be positive")
+    if not 0.0 < args.p_ar < 1.0:
+        raise ValueError("p-ar must be strictly between zero and one")
     if args.block_len < 1 or SEQ_LEN % args.block_len:
         raise ValueError("block-len must be a positive divisor of sequence length")
     spec = MODEL_BY_LABEL[args.size]
@@ -97,7 +105,7 @@ def main() -> None:
     total_steps = args.steps if args.steps is not None else planned_steps
     if total_steps < 2:
         raise ValueError("matched-step run needs at least two total steps")
-    ar_steps = round(P_AR * total_steps)
+    ar_steps = round(args.p_ar * total_steps)
     bd_steps = total_steps - ar_steps
     if ar_steps < 1 or bd_steps < 1:
         raise ValueError("both curriculum phases must be nonempty")
@@ -138,11 +146,11 @@ def main() -> None:
             entity=args.wandb_entity,
             name=args.wandb_name,
             group=args.wandb_group,
-            job_type="matched_step_p_ar_0.4",
+            job_type=f"matched_step_p_ar_{args.p_ar:g}",
             config={
                 "objective": "ar_to_bd",
                 "comparison_mode": "matched_pure_bd_steps_tokens",
-                "p_ar": P_AR,
+                "p_ar": args.p_ar,
                 "nominal_bd_budget": args.budget,
                 "size": spec.label,
                 "n_params": spec.n_params,
@@ -347,7 +355,7 @@ def main() -> None:
         "status": "complete",
         "objective": "ar_to_bd",
         "comparison_mode": "matched_pure_bd_steps_tokens",
-        "p_ar": P_AR,
+        "p_ar": args.p_ar,
         "budget": args.budget,
         "nominal_bd_budget": args.budget,
         "size": spec.label,
@@ -448,7 +456,7 @@ def main() -> None:
         wandb_run.finish()
     atomic_json_dump(result, args.output)
     print(
-        f"complete p_ar={P_AR:.1f} val_nelbo={val_nelbo:.5f} "
+        f"complete p_ar={args.p_ar:g} val_nelbo={val_nelbo:.5f} "
         f"realized/nominal={realized_flops / nominal_bd_flops:.3f} "
         f"seconds={duration:.1f}",
         flush=True,
