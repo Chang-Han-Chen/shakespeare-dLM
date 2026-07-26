@@ -57,6 +57,7 @@ def parse_args():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--steps", type=int, default=None, help="Test/benchmark override")
     parser.add_argument("--batch-size", type=int, default=SCALEUP_BATCH_SIZE)
+    parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--block-len", type=int, default=BLOCK_LEN)
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
@@ -117,7 +118,7 @@ def main() -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision("high")
-    set_seed(SEED)
+    set_seed(args.seed)
     dataset = ClimbMixData.load(device)
     clean_tokens = total_steps * tokens_per_step
     if clean_tokens > dataset.train.total_tokens:
@@ -170,7 +171,7 @@ def main() -> None:
                 "warmup_fraction_per_phase": WARMUP_FRACTION,
                 "decay_fraction_per_phase": DECAY_FRACTION,
                 "optimizer_reset_at_transition": True,
-                "seed": SEED,
+                "seed": args.seed,
                 "compiled": args.compile,
                 "ar_attention_backend": args.ar_attention_backend,
                 "bd_attention_backend": args.bd_attention_backend,
@@ -413,7 +414,7 @@ def main() -> None:
         ),
         "train_dataset_tokens": dataset.train.total_tokens,
         "effective_train_epochs": clean_tokens / dataset.train.total_tokens,
-        "seed": SEED,
+        "seed": args.seed,
         "compiled": args.compile,
         "ar_attention_backend": args.ar_attention_backend,
         "bd_attention_backend": args.bd_attention_backend,
