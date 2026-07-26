@@ -204,6 +204,8 @@ REFINEMENT_MODEL_SPECS = (
 # of MODEL_SPECS so the completed 1/2/4/8M IsoFLOP grid cannot silently grow.
 EXPERIMENTAL_MODEL_SPECS = (
     ModelSpec("10M", n_layer=13, d_model=224, n_head=14),
+    # Fixed architecture for the 25M-unique-token data-efficiency study.
+    ModelSpec("50.0M", n_layer=29, d_model=368, n_head=23),
 )
 ALL_MODEL_SPECS = tuple(
     sorted(

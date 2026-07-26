@@ -1,0 +1,63 @@
+{
+  "actual": {
+    "accounted_h100_bf16_mfu": 0.18140323139988512,
+    "budget": 1e+19,
+    "clean_tokens": 4189257728,
+    "duration_seconds": 10922.17923365347,
+    "n_params": 175965696,
+    "realized_flops": 7832617726022516736,
+    "realized_to_nominal_compute": 0.7832737612360022,
+    "result_path": "results_matched_p_ar_0p4/runs/1e19/176.0M/ar_9.0e-04_bd_3.0e-04_bs256_ddp4/result.json",
+    "val_masked_ce_t0.5": 2.9321794658899307,
+    "val_nelbo": 3.004717878997326,
+    "wandb_url": "https://wandb.ai/y38283929-uc-berkeley-electrical-engineering-computer-sc/climbmix-isoflop-scaleup/runs/9i0qqczf"
+  },
+  "batch_size_changed_from_scaling_profiles": true,
+  "comparison": "one_shot_1e19_vs_pre_run_rolling_laws",
+  "forecasts": [
+    {
+      "actual_d_to_forecast": 1.1931768350635423,
+      "actual_minus_forecast_loss": -0.08713052224982265,
+      "actual_n_to_forecast": 0.8488807377148818,
+      "d_opt": 3511011616.125536,
+      "loss_min": 3.0918484012471485,
+      "n_opt": 207291422.90786973,
+      "relative_loss_residual": -0.028180722643023848,
+      "window": "rolling_highest3"
+    },
+    {
+      "actual_d_to_forecast": 1.0289023893594202,
+      "actual_minus_forecast_loss": -0.06271281120367167,
+      "actual_n_to_forecast": 0.999029232013695,
+      "d_opt": 4071579356.1410346,
+      "loss_min": 3.0674306902009976,
+      "n_opt": 176136683.8538993,
+      "relative_loss_residual": -0.020444736177417044,
+      "window": "rolling_highest4"
+    },
+    {
+      "actual_d_to_forecast": 1.3067986791683275,
+      "actual_minus_forecast_loss": -0.022479003277997567,
+      "actual_n_to_forecast": 0.8026358887071058,
+      "d_opt": 3205740711.8486886,
+      "loss_min": 3.0271968822753235,
+      "n_opt": 219234771.92559552,
+      "relative_loss_residual": -0.007425682620649909,
+      "window": "rolling_highest5"
+    }
+  ],
+  "important_limitation": "One model size tests the predicted loss level but cannot localize or validate the compute-optimal model-size vertex.",
+  "one_shot_batch_size": 256,
+  "preferred_rolling_highest4": {
+    "actual_d_to_forecast": 1.0289023893594202,
+    "actual_minus_forecast_loss": -0.06271281120367167,
+    "actual_n_to_forecast": 0.999029232013695,
+    "d_opt": 4071579356.1410346,
+    "loss_min": 3.0674306902009976,
+    "n_opt": 176136683.8538993,
+    "relative_loss_residual": -0.020444736177417044,
+    "window": "rolling_highest4"
+  },
+  "scaling_profile_batch_size": 128,
+  "status": "complete"
+}

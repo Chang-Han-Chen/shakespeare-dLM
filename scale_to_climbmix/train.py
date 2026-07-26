@@ -201,12 +201,14 @@ def evaluate(model, dataset, device, block_len: int = BLOCK_LEN):
     return float(np.mean(nelbo_values)), float(np.mean(ce_values))
 
 
-def optimizer_for(model, lr):
+def optimizer_for(model, lr, weight_decay: float = WEIGHT_DECAY):
+    if weight_decay < 0.0:
+        raise ValueError("weight_decay must be nonnegative")
     decay, no_decay = [], []
     for parameter in model.parameters():
         (decay if parameter.ndim >= 2 else no_decay).append(parameter)
     groups = [
-        {"params": decay, "weight_decay": WEIGHT_DECAY},
+        {"params": decay, "weight_decay": weight_decay},
         {"params": no_decay, "weight_decay": 0.0},
     ]
     kwargs = {"lr": lr, "betas": (0.9, 0.95), "eps": 1e-8}

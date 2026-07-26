@@ -583,37 +583,36 @@ the BD phase use `9e-4`. Curriculum resets AdamW and restarts a phase-local
 
 ![High-scale phase learning rates](figures_followup_comparison/learning_rate_by_model_size.png)
 
-### Proposed one-shot \(10^{19}\) run
+### Completed one-shot \(10^{19}\) run
 
-This is an extrapolation, not a completed result. The preferred last-four
-fit predicts \(N=176.1\)M, \(D=4.072\)B, and NELBO about 3.067. The adjacent
-three- and five-point windows predict 207.3M/3.511B and 219.2M/3.206B,
-respectively, illustrating that model size is less certain than the loss.
-For a single run, the lower 176M choice is the more conservative point in the
-shallow basin and is closest to the expected square-root allocation.
+The preferred last-four profile fit predicted \(N=176.137\)M,
+\(D=4.072\)B, and validation NELBO 3.06743. The completed architecture has
+43 layers, width 576, 36 heads, SwiGLU width 1536, and 175,965,696 counted
+parameters. Thus the chosen \(N\) was 0.10% below the forecast. Its 4.189B
+clean tokens were 2.89% above forecast, giving \(D/N=23.81\).
 
-An architecture-compatible choice is 43 layers, width 576, 36 heads, and
-SwiGLU width 1536: 175,965,696 counted parameters. At nominal
-\(10^{19}\) pure-BD-equivalent FLOPs and global batch 128, exact accounting
-gives 127,847 optimizer steps and 4,189,290,496 clean tokens
-(\(D/N=23.81\)). With \(p_{\mathrm{AR}}=0.4\), that is 51,139 AR steps and
-76,708 BD steps; realized mixed compute is \(7.833\cdot10^{18}\) FLOPs.
+The user-selected global batch 256 changed the plan from 127,847 batch-128
+steps to 63,923 updates while preserving essentially the same clean-token
+exposure. The exact schedule used 25,569 AR and 38,354 BD steps, with peak
+LRs `9e-4` and `3e-4`. Realized mixed compute was
+\(7.833\cdot10^{18}\) FLOPs, or 0.7833 of the nominal pure-BD-equivalent
+budget.
 
-The proposed peak LRs are `9e-4` for AR and `3e-4` for BD. The AR choice is
-the accepted rate above 85.8M. The BD anchor has grown more than 4x since its
-last meaningful lower-LR check; the existing \(10^{18}\) `3e-4` probe was
-directionally 0.49% better but below the 1% acceptance threshold. Choosing
-`3e-4` is therefore a one-shot extrapolation based on model growth, not a
-directly established win. Global batch remains 128, so no linear LR scaling
-is applied.
+Validation NELBO was **3.00472** and masked CE at \(t=0.5\) was 2.93218.
+The NELBO is 0.06271 (2.04%) below the preferred 3.06743 prediction. It is
+also below the adjacent rolling-three and rolling-five predictions by 2.82%
+and 0.74%, respectively. This is a successful prediction of a performant
+allocation, but one model size cannot locate the \(10^{19}\) parabola or
+prove that 176M is compute-optimal. The batch-256 and BD-LR changes also mean
+the loss residual is not a clean test of the batch-128 scaling law alone.
 
-The run should use four-process NCCL DDP with local batch 32, rank-strided
-unique data, BF16/TF32, compilation, fused AdamW, causal FlashAttention for
-AR, and cuDNN masked SDPA for BD. Rank 0 alone owns W&B and atomic
-checkpoints; validation metrics are reduced across ranks. A short
-compile/DDP/resume smoke test should precede the one shot. Extrapolating the
-largest completed one-GPU runs and allowing for DDP communication gives a
-working estimate of roughly four hours, with a 3.5–4.5 hour planning range.
+Four-process NCCL DDP completed without OOM in 3.034 hours. Accounted H100
+BF16 MFU was 18.31% for AR, 18.09% for BD, and 18.14% overall, corresponding
+to 717.6 aggregate accounted TFLOP/s. Validation took 7.6 seconds. The W&B
+run is
+[9i0qqczf](https://wandb.ai/y38283929-uc-berkeley-electrical-engineering-computer-sc/climbmix-isoflop-scaleup/runs/9i0qqczf).
+
+![One-shot 1e19 forecast comparison](figures_matched_p_ar_0p4/one_shot_1e19_comparison.png)
 
 ## What we can and cannot conclude
 
@@ -633,6 +632,8 @@ working estimate of roughly four hours, with a 3.5–4.5 hour planning range.
 - At \(3\cdot10^{17}\), changing \(p_{\mathrm{AR}}\) from 0.4 to 0.15 moves
   the fitted optimum from 23.6M to 17.8M parameters while changing fitted
   loss by less than 0.2%.
+- The one-shot \(10^{19}\), 176M run reached NELBO 3.00472, 2.04% below the
+  preferred rolling-four loss forecast, at 18.14% accounted four-H100 MFU.
 
 ### Not yet established
 
@@ -643,16 +644,20 @@ working estimate of roughly four hours, with a 3.5–4.5 hour planning range.
 - Whether preserving or transforming optimizer state eliminates the
   transition cost.
 - Whether weight decay should differ between AR and BD on ClimbMix.
-- Whether the high-scale exponents and the proposed four-point extrapolation
-  persist at \(10^{19}\).
+- Whether 176M is the \(10^{19}\) compute-optimal model size; one point does
+  not localize an IsoFLOP minimum.
+- How much of the favorable \(10^{19}\) loss residual comes from scale versus
+  the batch-256 and lower-BD-LR changes.
 
 ## Recommended next experiments
 
-1. Validate the four-rank curriculum path with a short compile, DDP,
-   phase-transition, W&B, and resume smoke test.
-2. If that passes, run the proposed \(10^{19}\), \(p_{\mathrm{AR}}=0.4\),
-   176M-parameter point as one four-GPU job.
-3. Before interpreting sub-1% differences causally, repeat the
+1. On a fixed 25M-token prefix and 50.25M-parameter model, select the best
+   full-BD horizon from five-epoch checkpoints with proportional `T/5`
+   decay branches and endpoint-only validation.
+2. At exactly that selected total horizon, train \(p_{\mathrm{AR}}=0.4\)
+   curricula while doubling AR weight decay from 0.1 until the loss optimum
+   is bracketed.
+3. Before interpreting sub-1% scaling-frontier differences causally, repeat the
    \(3\cdot10^{17}\) compute-optimal \(p_{\mathrm{AR}}=0.15\) and 0.4 points
    with multiple seeds.
 4. Test optimizer-state transition mechanics only if the seed repeats show a
@@ -674,8 +679,11 @@ working estimate of roughly four hours, with a 3.5–4.5 hour planning range.
 - Pure-AR scale-up: `results_ar/summary.json`
 - Matched \(p_{\mathrm{AR}}=0.4\) scale-up:
   `results_matched_p_ar_0p4/summary.json`
+- One-shot \(10^{19}\) comparison:
+  `results_matched_p_ar_0p4/one_shot_1e19_comparison.json`
 - Targeted matched \(p_{\mathrm{AR}}=0.15\) profile:
   `results_matched_p_ar_0p15/summary.json`
 - Fixed-size curriculum-fraction sensitivity:
   `results_matched_p_ar_fraction_sensitivity/summary.json`
 - Cross-objective and LR comparisons: `results_followup_comparison/`
+- Limited-data experiment plan: `results_data_efficiency/plan.json`

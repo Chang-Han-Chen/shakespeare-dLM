@@ -28,7 +28,7 @@ from config import (
     is_feasible,
     steps_for,
 )
-from data import ClimbMixData, corrupt
+from data import ClimbMixData, FixedTokenEpochData, corrupt
 from curriculum_config import (
     P_AR_VALUES,
     is_feasible as curriculum_is_feasible,
@@ -39,6 +39,7 @@ from curriculum_config import (
 )
 from model import BlockDiffusionTransformer, make_dual_stream_mask
 from train import diffusion_nelbo, wsd_learning_rate
+from train_data_efficiency import linear_decay_lr, warmup_then_stable_lr
 from fixed_steps_config import FIXED_STEP_TARGETS, split_fixed_steps
 
 
@@ -69,6 +70,12 @@ class ConfigTests(unittest.TestCase):
         spec = MODEL_BY_LABEL["10M"]
         self.assertEqual(spec.n_params, 9_692_032)
         self.assertEqual((spec.n_layer, spec.d_model, spec.n_head), (13, 224, 14))
+        self.assertEqual(spec.head_dim, 16)
+
+    def test_data_efficiency_50m_configuration(self):
+        spec = MODEL_BY_LABEL["50.0M"]
+        self.assertEqual(spec.n_params, 50_249_664)
+        self.assertEqual((spec.n_layer, spec.d_model, spec.n_head), (29, 368, 23))
         self.assertEqual(spec.head_dim, 16)
 
     def test_first_scaleup_wave_configurations(self):
@@ -363,6 +370,60 @@ class DataTests(unittest.TestCase):
             with self.assertRaises(IndexError):
                 dataset.train_batch(1, 64)
 
+            fixed = FixedTokenEpochData(
+                source=dataset,
+                unique_tokens=2_048,
+                batch_size=2,
+                seed=1337,
+            )
+            self.assertEqual(fixed.steps_per_epoch, 4)
+            first_epoch = torch.cat(
+                [fixed.train_batch(step).flatten() for step in range(4)]
+            )
+            self.assertEqual(
+                set(first_epoch.tolist()),
+                set(range(2_048)),
+            )
+            for step in range(4):
+                rank_batches = [
+                    fixed.train_batch(step, rank=rank, world_size=2)
+                    for rank in range(2)
+                ]
+                self.assertTrue(
+                    torch.equal(
+                        torch.cat(rank_batches),
+                        fixed.train_batch(step),
+                    )
+                )
+            duplicate = FixedTokenEpochData(
+                source=dataset,
+                unique_tokens=2_048,
+                batch_size=2,
+                seed=1337,
+            )
+            self.assertEqual(
+                [fixed.source_batch_index(step) for step in range(8)],
+                [duplicate.source_batch_index(step) for step in range(8)],
+            )
+            inputs, targets = fixed.autoregressive_train_batch(0)
+            self.assertTrue(torch.equal(inputs[:, 1:].flatten(), targets[:, :-1].flatten()))
+            rank_ar = [
+                fixed.autoregressive_train_batch(0, rank=rank, world_size=2)
+                for rank in range(2)
+            ]
+            self.assertTrue(
+                torch.equal(
+                    torch.cat([pair[0] for pair in rank_ar]),
+                    inputs,
+                )
+            )
+            self.assertTrue(
+                torch.equal(
+                    torch.cat([pair[1] for pair in rank_ar]),
+                    targets,
+                )
+            )
+
 
 class ScheduleAndAnalysisTests(unittest.TestCase):
     def test_wsd_shape(self):
@@ -371,6 +432,14 @@ class ScheduleAndAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(wsd_learning_rate(849, total, peak), peak)
         self.assertLess(wsd_learning_rate(900, total, peak), peak)
         self.assertEqual(wsd_learning_rate(999, total, peak), 0.0)
+
+    def test_data_efficiency_schedule_shapes(self):
+        peak = 9e-4
+        self.assertAlmostEqual(warmup_then_stable_lr(0, 10, peak), peak / 10)
+        self.assertEqual(warmup_then_stable_lr(9, 10, peak), peak)
+        self.assertEqual(warmup_then_stable_lr(10, 10, peak), peak)
+        self.assertEqual(linear_decay_lr(0, 11, peak), peak)
+        self.assertEqual(linear_decay_lr(10, 11, peak), 0.0)
 
     def test_l1_quadratic(self):
         x = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])

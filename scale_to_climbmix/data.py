@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -130,6 +131,106 @@ class ClimbMixData:
         # Fixed non-overlapping validation batches make LR comparisons paired.
         tokens = self.val.read(batch_index * count, count)
         return self._tensor(tokens, batch_size).to(self.device, non_blocking=True)
+
+
+@dataclass(eq=False)
+class FixedTokenEpochData:
+    """Repeat a fixed token prefix, reshuffling contiguous batches each epoch.
+
+    Keeping batches contiguous preserves efficient memory-mapped reads while
+    changing their order deterministically from epoch to epoch.  Every clean
+    token in the prefix is consumed exactly once per epoch.
+    """
+
+    source: ClimbMixData
+    unique_tokens: int
+    batch_size: int
+    seed: int
+
+    def __post_init__(self) -> None:
+        tokens_per_batch = self.batch_size * SEQ_LEN
+        if self.unique_tokens < tokens_per_batch:
+            raise ValueError("unique_tokens must contain at least one batch")
+        if self.unique_tokens % tokens_per_batch:
+            raise ValueError(
+                "unique_tokens must be divisible by batch_size * sequence length"
+            )
+        # AR targets read one lookahead token at the end of the fixed prefix.
+        if self.unique_tokens + 1 > self.source.train.total_tokens:
+            raise ValueError("fixed token prefix exceeds the training split")
+
+    @property
+    def tokens_per_batch(self) -> int:
+        return self.batch_size * SEQ_LEN
+
+    @property
+    def steps_per_epoch(self) -> int:
+        return self.unique_tokens // self.tokens_per_batch
+
+    def local_batch_size(self, world_size: int) -> int:
+        if world_size < 1 or self.batch_size % world_size:
+            raise ValueError(
+                f"Global batch {self.batch_size} is not divisible by "
+                f"world size {world_size}"
+            )
+        return self.batch_size // world_size
+
+    @lru_cache(maxsize=128)
+    def epoch_order(self, epoch: int) -> tuple[int, ...]:
+        if epoch < 0:
+            raise ValueError("epoch must be nonnegative")
+        generator = np.random.default_rng(self.seed + epoch)
+        return tuple(
+            int(index) for index in generator.permutation(self.steps_per_epoch)
+        )
+
+    def source_batch_index(self, step: int) -> int:
+        if step < 0:
+            raise ValueError("step must be nonnegative")
+        epoch, within_epoch = divmod(step, self.steps_per_epoch)
+        return self.epoch_order(epoch)[within_epoch]
+
+    def train_batch(
+        self,
+        step: int,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> torch.Tensor:
+        if not 0 <= rank < world_size:
+            raise ValueError(f"Invalid distributed rank {rank}/{world_size}")
+        source_index = self.source_batch_index(step)
+        local_batch_size = self.local_batch_size(world_size)
+        local_tokens = local_batch_size * SEQ_LEN
+        tokens = self.source.train.read(
+            source_index * self.tokens_per_batch + rank * local_tokens,
+            local_tokens,
+        )
+        return self.source._tensor(tokens, local_batch_size).to(
+            self.source.device,
+            non_blocking=True,
+        )
+
+    def autoregressive_train_batch(
+        self,
+        step: int,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not 0 <= rank < world_size:
+            raise ValueError(f"Invalid distributed rank {rank}/{world_size}")
+        source_index = self.source_batch_index(step)
+        local_batch_size = self.local_batch_size(world_size)
+        local_tokens = local_batch_size * SEQ_LEN
+        tokens = self.source.train.read(
+            source_index * self.tokens_per_batch + rank * local_tokens,
+            local_tokens + 1,
+        ).astype(np.int64, copy=False)
+        inputs = torch.from_numpy(tokens[:-1]).view(local_batch_size, SEQ_LEN)
+        targets = torch.from_numpy(tokens[1:]).view(local_batch_size, SEQ_LEN)
+        return (
+            inputs.to(self.source.device, non_blocking=True),
+            targets.to(self.source.device, non_blocking=True),
+        )
 
 
 def sample_mask_probabilities(

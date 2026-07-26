@@ -1,0 +1,46 @@
+{
+  "ar_learning_rate": 0.0027,
+  "ar_weight_decay_sequence": [
+    0.1,
+    0.2,
+    0.4,
+    0.8
+  ],
+  "batch_size": 128,
+  "bd_learning_rate": 0.0009,
+  "bd_weight_decay": 0.1,
+  "curriculum": {
+    "horizon_rule": "exact_total_steps_of_selected_full_bd_endpoint",
+    "optimizer_reset_at_transition": true,
+    "p_ar": 0.4,
+    "schedule": "independent_fixed_horizon_run_with_phase_local_wsd",
+    "weight_decay_extension_rule": "double_beyond_0.8_until_the_best_loss_is_not_at_the_upper_boundary"
+  },
+  "full_bd": {
+    "checkpoint_every_epochs": 5,
+    "decay_epochs": "checkpoint_epoch / 5",
+    "initial_trunk_epochs": 50,
+    "schedule": "one_epoch_warmup_then_stable_trunk_with_independent_linear_decay_branches",
+    "trunk_extension_epochs": 25,
+    "trunk_extension_rule": "extend_if_the_latest_decayed_endpoints_are_still_improving",
+    "validation": "once_after_each_decay_branch"
+  },
+  "model": {
+    "d_model": 368,
+    "head_dim": 16,
+    "label": "50.0M",
+    "n_head": 23,
+    "n_layer": 29,
+    "n_params": 50249664
+  },
+  "no_downstream_evaluation": true,
+  "parallelism": {
+    "curriculum": "four_independent_one_gpu_weight_decay_runs",
+    "full_bd": "two_gpu_ddp_trunk_plus_two_one_gpu_decay_workers",
+    "global_batch_size_is_unchanged_by_ddp": true
+  },
+  "seed": 1337,
+  "sequence_length": 256,
+  "unique_training_tokens": 25001984,
+  "wandb_group": "data-efficiency-25m-50m"
+}

@@ -111,6 +111,44 @@ Completed runs are restart-safe. Final selections use complete runs only.
 `analyze.py` refuses to fit a profile until every LR choice has a positive,
 two-sided discrete curvature.
 
+## Limited-data efficiency workflow
+
+The fixed-data follow-up uses 25,001,984 unique training tokens (the nearest
+whole batch to 25M), global batch 128, and a dedicated 50,249,664-parameter
+model with 29 layers, width 368, and 23 heads. The same token prefix is
+repeated; contiguous batches are deterministically reshuffled each epoch.
+
+Full BD trains one resumable trunk with a one-epoch warmup and stable
+`9e-4` LR. It saves model, AdamW, RNG, and data-position state every five
+epochs. The checkpoint at epoch `T` is independently decayed to zero for
+`T/5` epochs, and validation NELBO is measured only after that decay. If the
+decayed endpoints are still improving at epoch 50, the trunk is extended by
+25 epochs.
+
+After the best full-BD endpoint is selected, every `p_AR=0.4` run uses
+exactly the same total optimizer steps and token exposures. Curriculum
+horizon is not swept and the full-BD checkpoint trick is not reused. The AR
+and BD phases retain their established `2.7e-3` and `9e-4` peak LRs,
+respectively, reset AdamW at transition, and use phase-local WSD. AR matrix
+weight decay is doubled geometrically from `0.1` (`0.1, 0.2, 0.4, 0.8, ...`)
+until the best endpoint is no longer the upper boundary; BD weight decay
+stays at `0.1`. There is no downstream evaluation.
+
+For wall-clock efficiency, the sequential full-BD trunk uses two-GPU DDP
+(local batch 64) while two one-GPU workers consume completed decay branches.
+After horizon selection, the first four AR weight decays run independently
+on the four GPUs.
+
+```bash
+python scale_to_climbmix/train_data_efficiency.py bd-trunk --help
+python scale_to_climbmix/train_data_efficiency.py bd-decay --help
+python scale_to_climbmix/train_data_efficiency.py curriculum --help
+python scale_to_climbmix/analyze_data_efficiency.py
+```
+
+The preregistered machine-readable design is
+`results_data_efficiency/plan.json`.
+
 ## Pure-BD IsoFLOP result
 
 The initial 1/2/4/8M grid was adaptively extended downward because the first
@@ -397,6 +435,15 @@ phase use `9e-4`. Each phase has its own optimizer and WSD schedule.
 ![Pure-BD, pure-AR, and matched comparison](figures_followup_comparison/followup_isoflop_comparison.png)
 
 ![Learning rates by objective and phase](figures_followup_comparison/learning_rate_by_model_size.png)
+
+The one-shot extension at nominal \(10^{19}\) FLOPs used the rolling-four
+prediction: 175,965,696 parameters, 4.189B clean tokens, `p_AR=0.4`, global
+batch 256, and four-GPU DDP. It completed in 3.034 hours at 18.14% accounted
+MFU and reached validation NELBO 3.00472, 2.04% below the preregistered
+3.06743 loss forecast. This validates the allocation as performant but does
+not localize the \(10^{19}\) model-size minimum from a single point.
+
+![One-shot 1e19 comparison](figures_matched_p_ar_0p4/one_shot_1e19_comparison.png)
 
 Primary outputs are in `results_ar/`, `results_matched_p_ar_0p4/`,
 `results_matched_p_ar_0p15/`,
