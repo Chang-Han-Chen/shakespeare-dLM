@@ -1,0 +1,20 @@
+{
+  "budget": 3e+17,
+  "size": "19.1M",
+  "batch_size": 128,
+  "p_ar_values": [
+    0.1,
+    0.15,
+    0.2,
+    0.4
+  ],
+  "ar_learning_rate": 0.0027,
+  "bd_learning_rate": 0.0009,
+  "comparison": "fixed model size, matched pure-BD steps and clean tokens",
+  "optimizer_reset_at_transition": true,
+  "purpose": "bounded local sensitivity check around the D/N-ratio-guided p_AR=0.15 proposal",
+  "result_sources": {
+    "0.15": "results_matched_p_ar_0p15/runs/3e17/19.1M/ar_2.7e-03_bd_9.0e-04/result.json",
+    "0.4": "results_matched_p_ar_0p4/runs/3e17/19.1M/ar_2.7e-03_bd_9.0e-04/result.json"
+  }
+}
