@@ -19,17 +19,35 @@ from config import ROOT
 STUDIES = {
     "ar": {
         "results": ROOT / "results_ar",
+        "figures": ROOT / "figures_ar",
+        "figure_stem": "pure_ar_isoflop",
         "loss": "val_ar_ce",
         "flops_per_token": "flash_causal_training_flops_per_clean_token",
         "title": "Pure autoregressive",
         "loss_label": "validation AR cross-entropy",
+        "matched": False,
     },
     "matched": {
         "results": ROOT / "results_matched_p_ar_0p4",
+        "figures": ROOT / "figures_matched_p_ar_0p4",
+        "figure_stem": "matched_p_ar_0p4_isoflop",
         "loss": "val_nelbo",
         "flops_per_token": "block_diffusion_training_flops_per_clean_token",
         "title": "Matched-step p_AR=0.4",
         "loss_label": "validation block-diffusion NELBO",
+        "matched": True,
+        "p_ar": 0.4,
+    },
+    "matched015": {
+        "results": ROOT / "results_matched_p_ar_0p15",
+        "figures": ROOT / "figures_matched_p_ar_0p15",
+        "figure_stem": "matched_p_ar_0p15_isoflop",
+        "loss": "val_nelbo",
+        "flops_per_token": "block_diffusion_training_flops_per_clean_token",
+        "title": "Matched-step p_AR=0.15",
+        "loss_label": "validation block-diffusion NELBO",
+        "matched": True,
+        "p_ar": 0.15,
     },
 }
 
@@ -74,13 +92,23 @@ def load_rows(study: dict) -> tuple[list[dict], list[dict]]:
         row = load_json(path)
         if row.get("status") != "complete":
             continue
+        if "p_ar" in study and not math.isclose(
+            row.get("p_ar", math.nan),
+            study["p_ar"],
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise ValueError(
+                f"Unexpected p_ar={row.get('p_ar')} in {path}; "
+                f"expected {study['p_ar']}"
+            )
         row["result_path"] = str(path.relative_to(ROOT))
         all_rows.append(row)
         key = f"{row['budget']:.0e}/{row['size']}".replace("+", "")
         decision = decisions.get(key)
         if decision is None:
             continue
-        if study is STUDIES["ar"]:
+        if not study["matched"]:
             is_selected = math.isclose(
                 row["learning_rate"],
                 decision["selected_lr"],
@@ -170,7 +198,7 @@ def fit_profiles(rows: list[dict], study: dict) -> list[dict]:
             "tokens_per_parameter": d_opt / n_opt,
             "loss_min": float(np.polyval(coefficients, vertex)),
         }
-        if study is STUDIES["matched"]:
+        if study["matched"]:
             ratio = interpolate(n_opt, points, "realized_to_nominal_compute")
             profile["realized_to_nominal_compute"] = ratio
             profile["realized_compute_opt"] = budget * ratio
@@ -294,9 +322,11 @@ def make_figure(
         axis.grid(alpha=0.2)
     fig.tight_layout()
     output.mkdir(parents=True, exist_ok=True)
-    stem = "pure_ar_isoflop" if study is STUDIES["ar"] else "matched_p_ar_0p4_isoflop"
     for extension in ("png", "pdf"):
-        fig.savefig(output / f"{stem}.{extension}", bbox_inches="tight")
+        fig.savefig(
+            output / f"{study['figure_stem']}.{extension}",
+            bbox_inches="tight",
+        )
     plt.close(fig)
 
 
@@ -304,11 +334,7 @@ def main() -> None:
     args = parse_args()
     study = STUDIES[args.study]
     results = study["results"]
-    figures = (
-        ROOT / "figures_ar"
-        if args.study == "ar"
-        else ROOT / "figures_matched_p_ar_0p4"
-    )
+    figures = study["figures"]
     selected, all_rows = load_rows(study)
     profiles = fit_profiles(selected, study)
     laws = fit_laws(profiles)
