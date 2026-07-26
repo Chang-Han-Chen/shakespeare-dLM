@@ -121,6 +121,7 @@ class ConfigTests(unittest.TestCase):
             "85.8M": (85_832_320, 34, 448, 28),
             "107.7M": (107_703_424, 35, 496, 31),
             "134.8M": (134_838_528, 39, 528, 33),
+            "176.0M": (175_965_696, 43, 576, 36),
         }
         self.assertEqual(
             {spec.label for spec in AR_LARGE_MODEL_SPECS},
@@ -337,6 +338,28 @@ class DataTests(unittest.TestCase):
                 for rank in range(4)
             ]
             self.assertTrue(torch.equal(torch.cat(rank_batches), batch))
+            ar_inputs, ar_targets = dataset.autoregressive_train_batch(0, 64)
+            rank_ar = [
+                dataset.autoregressive_train_batch(
+                    0,
+                    16,
+                    rank=rank,
+                    world_size=4,
+                )
+                for rank in range(4)
+            ]
+            self.assertTrue(
+                torch.equal(
+                    torch.cat([inputs for inputs, _ in rank_ar]),
+                    ar_inputs,
+                )
+            )
+            self.assertTrue(
+                torch.equal(
+                    torch.cat([targets for _, targets in rank_ar]),
+                    ar_targets,
+                )
+            )
             with self.assertRaises(IndexError):
                 dataset.train_batch(1, 64)
 

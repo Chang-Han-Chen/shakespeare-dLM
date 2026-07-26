@@ -139,7 +139,15 @@ class BlockDiffusionTransformer(nn.Module):
         if isinstance(module, (nn.Linear, nn.Embedding)):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, noisy: torch.Tensor, clean: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        noisy: torch.Tensor,
+        clean: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        # Route AR through __call__ so DistributedDataParallel can prepare its
+        # reducer for both phases of a matched curriculum.
+        if clean is None:
+            return self.forward_ar(noisy)
         if noisy.shape != clean.shape or noisy.shape[1] != SEQ_LEN:
             raise ValueError(f"Expected matching [batch, {SEQ_LEN}] streams")
         x = self.token_embedding(torch.cat((noisy, clean), dim=1))

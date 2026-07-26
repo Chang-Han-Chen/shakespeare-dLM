@@ -183,6 +183,8 @@ AR_LARGE_MODEL_SPECS = (
     ModelSpec("85.8M", n_layer=34, d_model=448, n_head=28),
     ModelSpec("107.7M", n_layer=35, d_model=496, n_head=31),
     ModelSpec("134.8M", n_layer=39, d_model=528, n_head=33),
+    # One-shot p_AR=0.4 extrapolation at 1e19 from the final four profiles.
+    ModelSpec("176.0M", n_layer=43, d_model=576, n_head=36),
 )
 # Targeted batch-64 historical refinements. The first two points are robust
 # to the remaining uncertainty in the 1e18 vertex; later points are added

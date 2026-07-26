@@ -96,9 +96,14 @@ class ClimbMixData:
         self,
         step: int,
         batch_size: int,
+        rank: int = 0,
+        world_size: int = 1,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not 0 <= rank < world_size:
+            raise ValueError(f"Invalid distributed rank {rank}/{world_size}")
         count = batch_size * SEQ_LEN
-        tokens = self.train.read(step * count, count + 1).astype(np.int64, copy=False)
+        offset = (step * world_size + rank) * count
+        tokens = self.train.read(offset, count + 1).astype(np.int64, copy=False)
         inputs = torch.from_numpy(tokens[:-1]).view(batch_size, SEQ_LEN)
         targets = torch.from_numpy(tokens[1:]).view(batch_size, SEQ_LEN)
         return (
