@@ -1,6 +1,6 @@
 # Findings: Block Diffusion Scaling on ClimbMix
 
-Last updated: 2026-07-23
+Last updated: 2026-07-26
 
 This note summarizes the ClimbMix experiments completed so far. It separates
 direct measurements from fitted or extrapolated conclusions and records
@@ -8,43 +8,52 @@ negative results as well as positive ones.
 
 ## Executive summary
 
-1. **The pure block-diffusion IsoFLOP pipeline works and gives a sensible
-   allocation law.** The primary local-quadratic fit gives
-   \(N_{\mathrm{opt}}\propto C^{0.514}\), close to square-root scaling, and
-   \(L_{\min}\propto C^{-0.0547}\).
-2. **Counted parameters and tokens do not scale in a constant ratio.**
-   \(D_{\mathrm{opt}}\propto C^{0.392}\), and fitted \(D/N\) ranges from about
-   105 to 217. Part of the apparent exponent mismatch is bookkeeping:
-   attention and the LM head matter at these sizes, so compute is not
-   proportional to counted \(ND\). With
-   \(N_{\mathrm{eff}}=F_{\mathrm{token}}/12\),
-   \(N_{\mathrm{eff}}\propto C^{0.608}\), whose exponent sums with the token
-   exponent to one by construction.
-3. **At fixed FLOPs and fixed model size, AR-to-BD curriculum often helps an
-   oversized, undertrained model.** AR steps are cheaper than BD steps, so the
-   curriculum also buys more optimizer steps and clean tokens. Re-optimizing
-   model size absorbs much of this benefit.
-4. **At fixed model size, total optimizer steps, and clean tokens, the
-   curriculum gain does not persist through the measured larger models.**
-   Curriculum helps the 0.14M, 0.29M, and 0.5M models, but every tested
-   nonzero AR fraction hurts at 1M and 2M.
-5. **The negative larger-model result is not explained by data reuse, omitting
-   AR decay, or failure to tune AR learning rate.** All runs are well below
-   one epoch; retaining the AR end decay is marginally better; and a separate
-   AR-LR sweep changes the curve negligibly. The optimizer reset remains a
-   possible transition cost, not an established root cause.
-6. **Curriculum utility depends on diffusion block length.** At 10M parameters
-   and fixed \(D/N=40\), block length 4 prefers pure BD, while block length 32
-   has a measured optimum at \(p_{\mathrm{AR}}=0.1\), improving validation
-   NELBO by 0.02390. The harder block-32 pure-BD task starts 0.14779 NELBO
-   worse, consistent with a short AR prefix helping an undertrained objective.
+1. **The batch-128 pure-BD study is complete through \(10^{18}\) nominal
+   FLOPs.** Its last four profiles give
+   \(N_{\mathrm{opt}}\propto C^{0.472}\),
+   \(D_{\mathrm{opt}}\propto C^{0.529}\), and
+   \(L_{\min}\propto C^{-0.0521}\). The \(10^{18}\) optimum is 24.50M
+   parameters and 2.793B clean tokens.
+2. **Pure AR uses larger models and fewer tokens than full BD.** Its final
+   rolling-five laws are \(N_{\mathrm{opt}}\propto C^{0.558}\) and
+   \(D_{\mathrm{opt}}\propto C^{0.450}\); the \(10^{18}\) optimum is 94.70M
+   parameters, 1.687B tokens, and \(D/N=17.8\).
+3. **A matched-step, matched-token \(p_{\mathrm{AR}}=0.4\) curriculum is
+   competitive through \(10^{18}\).** Its fitted NELBO improves over the
+   pure-BD frontier by 0.71%, 0.91%, 0.39%, and 0.03% at the four
+   batch-matched budgets from \(3\cdot10^{16}\) to \(10^{18}\). Because AR
+   steps are cheaper, the mixed runs use only about 78% of nominal FLOPs;
+   comparison to the pure-BD loss law at realized compute gives gains of
+   1.90%, 2.30%, 1.82%, and 1.21%.
+4. **Changing the curriculum fraction mainly shifts the compute-optimal
+   allocation in the current \(3\cdot10^{17}\) test.** A targeted
+   \(p_{\mathrm{AR}}=0.15\) profile fits 17.83M parameters, 1.151B tokens,
+   \(D/N=64.5\), and NELBO 3.64270. It is only 0.188% below the
+   \(p_{\mathrm{AR}}=0.4\) fitted loss, below the 1% decision threshold. This
+   is consistent with \(p_{\mathrm{AR}}\) acting as a sample-efficiency knob,
+   but one budget and one seed cannot establish equal-loss guarantees.
+5. **The predict-next-and-bracket strategy localizes shallow optima with
+   relatively few points, but the prediction is not exact.** For
+   \(p_{\mathrm{AR}}=0.4\), the eight finalized next-budget forecasts have
+   14.7% median absolute model-size error and 75% fall within 25%. Boundary
+   checks and roughly 1.25x extensions are still required.
+6. **Phase-specific learning rates track the standalone objectives.** At high
+   scale, AR uses `2.7e-3` through 68.5M and `9e-4` from 85.8M onward, while
+   BD remains at `9e-4`. Curriculum uses those same AR/BD rates with an
+   optimizer reset and a new WSD schedule at the transition.
+7. **The older fixed-size experiments remain useful diagnostics.** At fixed
+   FLOPs and model size, curriculum often helps an oversized, undertrained
+   model; re-optimizing model size absorbs much of the gain. At 10M
+   parameters and fixed \(D/N=40\), block length 4 prefers pure BD, while
+   block length 32 prefers \(p_{\mathrm{AR}}=0.1\) by 0.02390 NELBO.
 
 The strongest current interpretation is therefore:
 
-> AR pretraining can give BD a better starting representation, but at the
-> compute-optimal training length its steps are not consistently more valuable
-> than uninterrupted BD steps. Much of the large fixed-size, fixed-FLOP gain
-> comes from accelerating models that are too large for their compute budget.
+> AR pretraining changes the favorable model/data allocation and can preserve
+> essentially the same BD frontier loss with fewer accounted FLOPs. The exact
+> curriculum fraction appears less important than re-optimizing model size,
+> but the observed sub-1% differences are too small for a single-seed study to
+> establish equivalence.
 
 ## Experimental setup
 
@@ -489,43 +498,165 @@ both nominal pure-BD-equivalent and realized mixed FLOPs. The preregistered
 neighborhoods and model-growth-triggered 3x LR checks are in
 `followup_isoflop_plan.json`.
 
+The study is complete through \(10^{18}\):
+
+| FLOPs | fitted \(N\) | fitted \(D\) | \(D/N\) | fitted NELBO | realized/nominal |
+|---:|---:|---:|---:|---:|---:|
+| \(10^{14}\) | 0.258M | 0.042B | 162.2 | 5.54300 | 0.875 |
+| \(3\cdot10^{14}\) | 0.439M | 0.070B | 159.1 | 5.28783 | 0.863 |
+| \(10^{15}\) | 0.846M | 0.099B | 116.4 | 4.95069 | 0.818 |
+| \(3\cdot10^{15}\) | 1.015M | 0.236B | 232.4 | 4.70341 | 0.810 |
+| \(10^{16}\) | 2.129M | 0.325B | 152.5 | 4.42700 | 0.783 |
+| \(3\cdot10^{16}\) | 6.211M | 0.328B | 52.8 | 4.11096 | 0.777 |
+| \(10^{17}\) | 10.563M | 0.646B | 61.1 | 3.84540 | 0.776 |
+| \(3\cdot10^{17}\) | 23.612M | 0.869B | 36.8 | 3.64954 | 0.775 |
+| \(10^{18}\) | 46.117M | 1.531B | 33.2 | 3.44823 | 0.778 |
+
+The \(10^{18}\) sweep measured 28.1M, 35.3M, 43.7M, 54.5M, 68.5M, and
+85.8M. The locally fitted vertex uses 35.3M/43.7M/54.5M support, so it is not
+an edge extrapolation. The final rolling-five fit is
+
+```text
+N_opt(C) = 0.000101 * C^0.649
+D_opt(C) = 571.4 * C^0.355.
+```
+
+The token exponent is sensitive to the transitional \(10^{16}\) profile,
+whose fitted \(D/N\) is 152.5. Fitting the final four high-compute profiles
+instead gives exponents 0.586 and 0.424, with log-space R-squared 0.992 and
+0.985. This is the preferred extrapolation window for one further decade:
+three points are too responsive to a single shallow vertex, while five pull
+in the visibly transitional \(10^{16}\) allocation.
+
+The batch-matched comparison to pure BD is:
+
+| FLOPs | pure-BD NELBO | \(p_{\mathrm{AR}}=0.4\) NELBO | nominal gain | realized-FLOP-adjusted gain |
+|---:|---:|---:|---:|---:|
+| \(3\cdot10^{16}\) | 4.14035 | 4.11096 | 0.71% | 1.90% |
+| \(10^{17}\) | 3.88064 | 3.84540 | 0.91% | 2.30% |
+| \(3\cdot10^{17}\) | 3.66372 | 3.64954 | 0.39% | 1.82% |
+| \(10^{18}\) | 3.44915 | 3.44823 | 0.03% | 1.21% |
+
+The nominal gain asks whether curriculum improves loss for the same updates
+and clean tokens. The adjusted gain instead compares against the batch-128
+pure-BD loss law at the mixed run's realized compute. Both are fitted
+single-seed comparisons. They support compute efficiency, but do not by
+themselves demonstrate that the tiny nominal differences are reproducible.
+
+At \(3\cdot10^{17}\), a six-size targeted \(p_{\mathrm{AR}}=0.15\) profile
+fits \(N=17.835\)M, \(D=1.151\)B, \(D/N=64.5\), and NELBO 3.64270 using
+15.5M/19.1M/22.3M support. This is 0.188% lower than the
+\(p_{\mathrm{AR}}=0.4\) fit and 0.574% lower than pure BD. Since the
+curriculum-to-curriculum difference is below the 1% threshold, it is better
+read as evidence for a shallow allocation/loss tradeoff than as a winner.
+
+![Targeted p_AR=0.15 profile](figures_matched_p_ar_0p15/matched_p_ar_0p15_isoflop.png)
+
+A fixed-size check at \(3\cdot10^{17}\) and 19.1M parameters then held the
+seed, batch, total steps, clean tokens, and phase LRs fixed:
+
+| \(p_{\mathrm{AR}}\) | validation NELBO | gain over pure BD | realized/nominal FLOPs |
+|---:|---:|---:|---:|
+| 0.00 | 3.67873 | 0.00% | 1.000 |
+| 0.10 | 3.68820 | -0.26% | 0.944 |
+| 0.15 | 3.64686 | +0.87% | 0.916 |
+| 0.20 | 3.64951 | +0.79% | 0.888 |
+| 0.40 | 3.66073 | +0.49% | 0.776 |
+
+The 0.15 and 0.20 losses differ by only 0.00265 NELBO, and every improvement
+over pure BD remains below the 1% threshold. The \(p=0.10\) result also shows
+that loss is not invariant to fraction at a fixed model size. The stronger
+sample-efficiency-knob interpretation therefore remains a hypothesis about
+the re-optimized frontier, not a guarantee implied by this sensitivity
+curve.
+
+![Fixed-size curriculum-fraction sensitivity](figures_matched_p_ar_fraction_sensitivity/matched_fraction_sensitivity.png)
+
+The high-scale LR choices transfer cleanly by objective. Pure AR and the AR
+phase use `2.7e-3` through 68.5M, then `9e-4` at 85.8M and above. Pure BD and
+the BD phase use `9e-4`. Curriculum resets AdamW and restarts a phase-local
+5%/80%/15% WSD schedule, so the rates are not forced to be equal.
+
+![Matched p_AR=0.4 IsoFLOP analysis](figures_matched_p_ar_0p4/matched_p_ar_0p4_isoflop.png)
+
+![Follow-up allocation and loss comparison](figures_followup_comparison/followup_isoflop_comparison.png)
+
+![High-scale phase learning rates](figures_followup_comparison/learning_rate_by_model_size.png)
+
+### Proposed one-shot \(10^{19}\) run
+
+This is an extrapolation, not a completed result. The preferred last-four
+fit predicts \(N=176.1\)M, \(D=4.072\)B, and NELBO about 3.067. The adjacent
+three- and five-point windows predict 207.3M/3.511B and 219.2M/3.206B,
+respectively, illustrating that model size is less certain than the loss.
+For a single run, the lower 176M choice is the more conservative point in the
+shallow basin and is closest to the expected square-root allocation.
+
+An architecture-compatible choice is 43 layers, width 576, 36 heads, and
+SwiGLU width 1536: 175,965,696 counted parameters. At nominal
+\(10^{19}\) pure-BD-equivalent FLOPs and global batch 128, exact accounting
+gives 127,847 optimizer steps and 4,189,290,496 clean tokens
+(\(D/N=23.81\)). With \(p_{\mathrm{AR}}=0.4\), that is 51,139 AR steps and
+76,708 BD steps; realized mixed compute is \(7.833\cdot10^{18}\) FLOPs.
+
+The proposed peak LRs are `9e-4` for AR and `3e-4` for BD. The AR choice is
+the accepted rate above 85.8M. The BD anchor has grown more than 4x since its
+last meaningful lower-LR check; the existing \(10^{18}\) `3e-4` probe was
+directionally 0.49% better but below the 1% acceptance threshold. Choosing
+`3e-4` is therefore a one-shot extrapolation based on model growth, not a
+directly established win. Global batch remains 128, so no linear LR scaling
+is applied.
+
+The run should use four-process NCCL DDP with local batch 32, rank-strided
+unique data, BF16/TF32, compilation, fused AdamW, causal FlashAttention for
+AR, and cuDNN masked SDPA for BD. Rank 0 alone owns W&B and atomic
+checkpoints; validation metrics are reduced across ranks. A short
+compile/DDP/resume smoke test should precede the one shot. Extrapolating the
+largest completed one-GPU runs and allowing for DDP communication gives a
+working estimate of roughly four hours, with a 3.5–4.5 hour planning range.
+
 ## What we can and cannot conclude
 
 ### Supported by the current experiments
 
-- Pure BD on this setup has a counted-parameter allocation exponent close to
-  0.5 over \(10^{14}\)–\(10^{16}\) FLOPs.
+- Pure BD on this setup has counted-parameter and token allocation exponents
+  close to 0.5 across the four batch-128 profiles through \(10^{18}\).
 - Attention and LM-head compute are material at these model sizes; naive
   `6*N*D` or `12*N*D` with counted parameters is not adequate.
 - AR curriculum can substantially help an undertrained, oversized model at
   fixed FLOPs and model size.
-- Re-optimizing model size makes the compute-frontier gain much smaller.
-- When steps and tokens are matched at the pure-BD-optimal allocation,
-  curriculum benefit is not present at 1M or 2M in the current single-seed
-  runs.
+- Re-optimizing model size makes the nominal compute-frontier gain small:
+  \(p_{\mathrm{AR}}=0.4\) is within 1% of pure BD at every batch-matched
+  budget and within 0.03% at \(10^{18}\).
+- AR's cheaper attention makes the matched curriculum about 22% cheaper in
+  realized FLOPs at high scale, despite matching pure-BD steps and tokens.
+- At \(3\cdot10^{17}\), changing \(p_{\mathrm{AR}}\) from 0.4 to 0.15 moves
+  the fitted optimum from 23.6M to 17.8M parameters while changing fitted
+  loss by less than 0.2%.
 
 ### Not yet established
 
-- Whether the matched-step gain returns at substantially larger model sizes.
-- Whether the small 0.29M gain and the 2M LR near-tie survive repeated seeds.
+- Whether sub-1% frontier differences survive repeated seeds.
+- Whether curriculum fractions guarantee the same loss after model size is
+  re-optimized; the current observation covers one targeted alternative at
+  one budget.
 - Whether preserving or transforming optimizer state eliminates the
   transition cost.
 - Whether weight decay should differ between AR and BD on ClimbMix.
-- Whether the observed exponents persist outside this small-model,
-  five-budget range.
+- Whether the high-scale exponents and the proposed four-point extrapolation
+  persist at \(10^{19}\).
 
 ## Recommended next experiments
 
-1. Repeat the matched-step 0.5M, 1M, and 2M baselines and best curriculum
-   candidates with at least three seeds. This is the cheapest way to determine
-   whether the sign change near 1M is real.
-2. Test transition mechanics at one representative point: reset optimizer,
-   preserve moments, and preserve weights while resetting only the step count.
-3. If the 1M/2M negative result replicates, run the 4M matched-step curriculum
-   before spending on 8M. The 4M target is already an extrapolation to
-   \(2.5\cdot10^{16}\) FLOPs, so it should be labeled as such.
-4. Tune AR-phase weight decay only after transition mechanics are understood;
-   it is a larger grid and is less diagnostic than the experiments above.
+1. Validate the four-rank curriculum path with a short compile, DDP,
+   phase-transition, W&B, and resume smoke test.
+2. If that passes, run the proposed \(10^{19}\), \(p_{\mathrm{AR}}=0.4\),
+   176M-parameter point as one four-GPU job.
+3. Before interpreting sub-1% differences causally, repeat the
+   \(3\cdot10^{17}\) compute-optimal \(p_{\mathrm{AR}}=0.15\) and 0.4 points
+   with multiple seeds.
+4. Test optimizer-state transition mechanics only if the seed repeats show a
+   stable curriculum gap.
 
 ## Primary artifacts
 
@@ -540,3 +671,11 @@ neighborhoods and model-growth-triggered 3x LR checks are in
 - AR-LR diagnostic:
   `results_diagnostics/ar_lr_sweep_3e14_0p5M/summary.json`
 - FlexAttention benchmark: `results_fixed_steps/benchmark_flex_2M.json`
+- Pure-AR scale-up: `results_ar/summary.json`
+- Matched \(p_{\mathrm{AR}}=0.4\) scale-up:
+  `results_matched_p_ar_0p4/summary.json`
+- Targeted matched \(p_{\mathrm{AR}}=0.15\) profile:
+  `results_matched_p_ar_0p15/summary.json`
+- Fixed-size curriculum-fraction sensitivity:
+  `results_matched_p_ar_fraction_sensitivity/summary.json`
+- Cross-objective and LR comparisons: `results_followup_comparison/`

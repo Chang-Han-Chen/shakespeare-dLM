@@ -322,6 +322,88 @@ equivalent compute and the lower realized mixed compute are reported. AR and
 BD receive separate phase-local 5%/80%/15% WSD schedules and separately
 selected peak LRs.
 
+The adaptive `p_AR=0.4` sweep is complete through `1e18`:
+
+| C | fitted N* | fitted D* | D/N | fitted NELBO | realized/nominal FLOPs |
+|---:|---:|---:|---:|---:|---:|
+| 1e14 | 0.258M | 0.042B | 162.2 | 5.54300 | 0.875 |
+| 3e14 | 0.439M | 0.070B | 159.1 | 5.28783 | 0.863 |
+| 1e15 | 0.846M | 0.099B | 116.4 | 4.95069 | 0.818 |
+| 3e15 | 1.015M | 0.236B | 232.4 | 4.70341 | 0.810 |
+| 1e16 | 2.129M | 0.325B | 152.5 | 4.42700 | 0.783 |
+| 3e16 | 6.211M | 0.328B | 52.8 | 4.11096 | 0.777 |
+| 1e17 | 10.563M | 0.646B | 61.1 | 3.84540 | 0.776 |
+| 3e17 | 23.612M | 0.869B | 36.8 | 3.64954 | 0.775 |
+| 1e18 | 46.117M | 1.531B | 33.2 | 3.44823 | 0.778 |
+
+At `1e18`, six measured sizes from 28.1M through 85.8M localize the vertex
+with 35.3M/43.7M/54.5M support. The rolling-highest-five allocation laws are
+`N_opt ~ C^0.649` and `D_opt ~ C^0.355`; their imbalance is sensitive to the
+transitional `1e16` point. The last four high-compute profiles instead give
+`N_opt ~ C^0.586` and `D_opt ~ C^0.424`, with log-space R-squared 0.992 and
+0.985. Across all eight next-budget predictions, the median absolute
+model-size error is 14.7%; six landed within 25% after adaptive bracketing.
+
+The batch-matched pure-BD comparison is:
+
+| C | pure-BD NELBO | p_AR=0.4 NELBO | nominal gain | gain at realized FLOPs |
+|---:|---:|---:|---:|---:|
+| 3e16 | 4.14035 | 4.11096 | 0.71% | 1.90% |
+| 1e17 | 3.88064 | 3.84540 | 0.91% | 2.30% |
+| 3e17 | 3.66372 | 3.64954 | 0.39% | 1.82% |
+| 1e18 | 3.44915 | 3.44823 | 0.03% | 1.21% |
+
+The nominal comparison holds tokens and updates fixed, whereas the adjusted
+comparison evaluates the batch-128 pure-BD loss law at the curriculum run's
+lower realized FLOPs. Consequently, `p_AR=0.4` reaches essentially the same
+`1e18` NELBO with about 22% fewer accounted FLOPs, but that claim is based on
+fitted single-seed frontiers rather than repeated runs.
+
+A targeted `p_AR=0.15` profile at `3e17`, motivated by the high-scale
+pure-AR/full-BD allocation-ratio contrast, used six model sizes. Its
+15.5M/19.1M/22.3M support gives `N*=17.835M`, `D*=1.151B`, `D/N=64.5`, and
+NELBO `3.64270`. This is 0.188% below the fitted `p_AR=0.4` loss and 0.574%
+below pure BD. The difference between the two curricula is below the 1%
+decision threshold, so the evidence supports a shallow family of competitive
+allocations, not a proven improvement or guarantee.
+
+![Targeted p_AR=0.15 profile](figures_matched_p_ar_0p15/matched_p_ar_0p15_isoflop.png)
+
+A fixed-size sensitivity check at `3e17` and 19.1M holds batch, seed, updates,
+tokens, and phase LRs fixed:
+
+| p_AR | validation NELBO | gain over pure BD | realized/nominal FLOPs |
+|---:|---:|---:|---:|
+| 0.00 | 3.67873 | 0.00% | 1.000 |
+| 0.10 | 3.68820 | -0.26% | 0.944 |
+| 0.15 | 3.64686 | +0.87% | 0.916 |
+| 0.20 | 3.64951 | +0.79% | 0.888 |
+| 0.40 | 3.66073 | +0.49% | 0.776 |
+
+The 0.15/0.20 near-tie and monotone compute reduction are encouraging, but
+`p_AR=0.10` shows that the fixed-size loss is not invariant to the fraction.
+Demonstrating a sample-efficiency knob requires re-optimizing model size for
+each fraction and repeating the sub-1% loss comparisons across seeds.
+
+![Fixed-size curriculum-fraction sensitivity](figures_matched_p_ar_fraction_sensitivity/matched_fraction_sensitivity.png)
+
+The curriculum phases inherit the peak LR selected for their standalone
+objective. At high scale, pure AR and the curriculum AR phase use `2.7e-3`
+through 68.5M and `9e-4` from 85.8M onward; pure BD and the curriculum BD
+phase use `9e-4`. Each phase has its own optimizer and WSD schedule.
+
+![Matched p_AR=0.4 IsoFLOP analysis](figures_matched_p_ar_0p4/matched_p_ar_0p4_isoflop.png)
+
+![Pure-BD, pure-AR, and matched comparison](figures_followup_comparison/followup_isoflop_comparison.png)
+
+![Learning rates by objective and phase](figures_followup_comparison/learning_rate_by_model_size.png)
+
+Primary outputs are in `results_ar/`, `results_matched_p_ar_0p4/`,
+`results_matched_p_ar_0p15/`,
+`results_matched_p_ar_fraction_sensitivity/`, and
+`results_followup_comparison/`, with matching figures directories. Every
+completed run has a W&B run ID and URL in its `result.json`.
+
 ## AR-to-BD curriculum follow-up
 
 After the pure-BD LRs are frozen, the follow-up evaluates

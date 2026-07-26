@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 
 from analyze import fit_power_law
@@ -218,8 +219,9 @@ def fit_laws(profiles: list[dict]) -> dict:
         }
 
     output = {"all": laws(profiles)}
-    if len(profiles) >= 5:
-        output["rolling_highest5"] = laws(profiles[-5:])
+    for window in (3, 4, 5):
+        if len(profiles) >= window:
+            output[f"rolling_highest{window}"] = laws(profiles[-window:])
     return output
 
 
@@ -246,8 +248,13 @@ def make_figure(
     study: dict,
     output: Path,
 ) -> None:
-    fig, axes = plt.subplots(1, 3, figsize=(13.3, 4.1))
-    profile_ax, allocation_ax, ratio_ax = axes
+    if len(profiles) == 1:
+        fig, profile_ax = plt.subplots(figsize=(6.4, 4.2))
+        axes = [profile_ax]
+        allocation_ax = ratio_ax = None
+    else:
+        fig, axes = plt.subplots(1, 3, figsize=(13.3, 4.1))
+        profile_ax, allocation_ax, ratio_ax = axes
     colors = plt.cm.viridis(np.linspace(0.08, 0.92, len(profiles)))
     for color, profile in zip(colors, profiles):
         points = sorted(
@@ -288,35 +295,48 @@ def make_figure(
     profile_ax.set_ylabel(study["loss_label"])
     profile_ax.set_title(f"{study['title']} IsoFLOP profiles")
     profile_ax.legend(frameon=False, fontsize=7, ncol=2)
+    profile_sizes = sorted({row["n_params"] / 1e6 for row in rows})
+    if profile_sizes[-1] / profile_sizes[0] < 3:
+        ticks = profile_sizes[::2]
+        if ticks[-1] != profile_sizes[-1]:
+            ticks.append(profile_sizes[-1])
+        profile_ax.xaxis.set_major_locator(mticker.FixedLocator(ticks))
+        profile_ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.1f"))
+        profile_ax.xaxis.set_minor_formatter(mticker.NullFormatter())
 
-    compute = np.array([row["budget"] for row in profiles])
-    n_opt = np.array([row["n_opt"] for row in profiles])
-    d_opt = np.array([row["d_opt"] for row in profiles])
-    allocation_ax.loglog(compute, n_opt, "o-", label="N*")
-    allocation_ax.loglog(compute, d_opt, "s-", label="D*")
-    law_group = laws.get("rolling_highest5", laws.get("all", {}))
-    if law_group:
-        dense_compute = np.geomspace(compute[-min(5, len(compute))], compute[-1], 100)
-        for key, linestyle in (("n_opt", "-"), ("d_opt", "--")):
-            law = law_group[key]
-            allocation_ax.loglog(
-                dense_compute,
-                law["coefficient"] * dense_compute ** law["exponent"],
-                linestyle,
-                color="black",
-                alpha=0.65,
+    if allocation_ax is not None and ratio_ax is not None:
+        compute = np.array([row["budget"] for row in profiles])
+        n_opt = np.array([row["n_opt"] for row in profiles])
+        d_opt = np.array([row["d_opt"] for row in profiles])
+        allocation_ax.loglog(compute, n_opt, "o-", label="N*")
+        allocation_ax.loglog(compute, d_opt, "s-", label="D*")
+        law_group = laws.get("rolling_highest5", laws.get("all", {}))
+        if law_group:
+            dense_compute = np.geomspace(
+                compute[-min(5, len(compute))],
+                compute[-1],
+                100,
             )
-    allocation_ax.set_xlabel("nominal training FLOPs C")
-    allocation_ax.set_ylabel("parameters / clean tokens")
-    allocation_ax.set_title("Compute-optimal allocation")
-    allocation_ax.legend(frameon=False)
+            for key, linestyle in (("n_opt", "-"), ("d_opt", "--")):
+                law = law_group[key]
+                allocation_ax.loglog(
+                    dense_compute,
+                    law["coefficient"] * dense_compute ** law["exponent"],
+                    linestyle,
+                    color="black",
+                    alpha=0.65,
+                )
+        allocation_ax.set_xlabel("nominal training FLOPs C")
+        allocation_ax.set_ylabel("parameters / clean tokens")
+        allocation_ax.set_title("Compute-optimal allocation")
+        allocation_ax.legend(frameon=False)
 
-    ratio_ax.loglog(compute, d_opt / n_opt, "o-", color="#9b4f0f")
-    ratio_ax.axhline(20, color="gray", linestyle=":", label="D/N=20 seed")
-    ratio_ax.set_xlabel("nominal training FLOPs C")
-    ratio_ax.set_ylabel("optimal clean tokens per parameter D*/N*")
-    ratio_ax.set_title("Allocation ratio")
-    ratio_ax.legend(frameon=False)
+        ratio_ax.loglog(compute, d_opt / n_opt, "o-", color="#9b4f0f")
+        ratio_ax.axhline(20, color="gray", linestyle=":", label="D/N=20 seed")
+        ratio_ax.set_xlabel("nominal training FLOPs C")
+        ratio_ax.set_ylabel("optimal clean tokens per parameter D*/N*")
+        ratio_ax.set_title("Allocation ratio")
+        ratio_ax.legend(frameon=False)
 
     for axis in axes:
         axis.grid(alpha=0.2)
