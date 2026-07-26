@@ -237,7 +237,12 @@
     "selected_bd_lr": 0.0009
   },
   "1e18/28.1M": {
-    "policy": "initial pure-BD-centered neighborhood; inherit phase LRs by model size",
+    "policy": "second speculative approximately 1.25x lower extension after 43.7M became the boundary winner while 35.3M was running",
+    "selected_ar_lr": 0.0027,
+    "selected_bd_lr": 0.0009
+  },
+  "1e18/35.3M": {
+    "policy": "speculative adaptive lower extension launched on a freed GPU while the 43.7M lower neighbor completed",
     "selected_ar_lr": 0.0027,
     "selected_bd_lr": 0.0009
   },
