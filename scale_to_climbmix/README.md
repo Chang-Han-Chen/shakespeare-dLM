@@ -149,6 +149,35 @@ python scale_to_climbmix/analyze_data_efficiency.py
 The preregistered machine-readable design is
 `results_data_efficiency/plan.json`.
 
+### Completed limited-data result
+
+The full-BD sweep evaluated 22 proportional-decay endpoints. Its best
+validation NELBO was **3.57382** at the epoch-100 trunk checkpoint followed
+by 20 decay epochs, fixing the comparison horizon at 91,560 optimizer steps,
+120 token-exposure epochs, and 3.000B clean-token exposures. The next two
+completed endpoints, at horizons 126 and 132, were worse, so the selected
+minimum is not an unbracketed right boundary.
+
+Every curriculum used that exact horizon, `p_AR=0.4`, AR/BD peak LRs
+`2.7e-3`/`9e-4`, and BD weight decay 0.1. Only AR weight decay changed:
+
+| AR weight decay | validation NELBO | gap to best full BD |
+|---:|---:|---:|
+| 0.1 | 3.59529 | +0.60% |
+| 0.2 | 3.55663 | -0.48% |
+| **0.4** | **3.52605** | **-1.34%** |
+| 0.8 | 3.67990 | +2.97% |
+
+Thus the geometric sweep is bracketed at 0.4: stronger AR regularization not
+only recovered the full-BD best loss but improved it by 0.04777 NELBO.
+Because AR attention is cheaper, each curriculum used only 77.76% of the
+realized full-BD compute despite matching optimizer steps and clean-token
+exposures. The four independent H100 runs took about 3.41 hours each at
+13.76--13.77% accounted MFU and completed without OOM or numerical failure.
+All trunk, decay-endpoint, and curriculum runs are logged in W&B.
+
+![Limited-data efficiency result](figures_data_efficiency/data_efficiency_25m_50m.png)
+
 ## Pure-BD IsoFLOP result
 
 The initial 1/2/4/8M grid was adaptively extended downward because the first

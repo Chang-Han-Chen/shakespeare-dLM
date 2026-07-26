@@ -141,14 +141,31 @@ def main() -> None:
         label="best full BD",
     )
     if curricula:
+        curriculum_weight_decays = [
+            row["ar_weight_decay"] for row in curricula
+        ]
         axes[1].plot(
-            [row["ar_weight_decay"] for row in curricula],
+            curriculum_weight_decays,
             [row["val_nelbo"] for row in curricula],
             "o-",
             color="#e24a33",
             label=r"$p_{\mathrm{AR}}=0.4$",
         )
         axes[1].set_xscale("log", base=2)
+        axes[1].set_xticks(curriculum_weight_decays)
+        axes[1].set_xticklabels(
+            [f"{weight_decay:g}" for weight_decay in curriculum_weight_decays]
+        )
+        axes[1].scatter(
+            [best_curriculum["ar_weight_decay"]],
+            [best_curriculum["val_nelbo"]],
+            marker="*",
+            s=140,
+            color="#fbc15e",
+            edgecolor="black",
+            linewidth=0.5,
+            zorder=3,
+        )
     axes[1].set_xlabel("AR-phase weight decay")
     axes[1].set_ylabel("validation block-diffusion NELBO")
     axes[1].set_title("Fixed-horizon curriculum recovery")

@@ -614,6 +614,45 @@ run is
 
 ![One-shot 1e19 forecast comparison](figures_matched_p_ar_0p4/one_shot_1e19_comparison.png)
 
+### Fixed-25M-token data-efficiency result
+
+The fixed dataset contains 25,001,984 unique training tokens, and the model
+has 50,249,664 counted parameters. Global batch size was 128 throughout. The
+full-BD stable trunk saved every five epochs; each checkpoint at epoch \(T\)
+was independently decayed to zero for \(T/5\) epochs and validated only at
+the decay endpoint. Among 22 completed endpoints, the measured minimum was
+NELBO **3.57382** from checkpoint 100 plus 20 decay epochs. This selected
+91,560 steps, 120 token-exposure epochs, and 3.000B clean-token exposures.
+The following endpoints at horizons 126 and 132 gave 3.59537 and 3.58524,
+respectively, providing post-minimum coverage.
+
+The \(p_{\mathrm{AR}}=0.4\) curricula then used exactly the selected 91,560
+steps: 36,624 AR and 54,936 BD. Every run used AR/BD peak LRs
+`2.7e-3`/`9e-4`, reset AdamW at the transition, used BD weight decay 0.1,
+and changed only the AR-phase matrix weight decay:
+
+| AR weight decay | validation NELBO | absolute gap | relative gap |
+|---:|---:|---:|---:|
+| 0.1 | 3.59529 | +0.02148 | +0.60% |
+| 0.2 | 3.55663 | -0.01719 | -0.48% |
+| **0.4** | **3.52605** | **-0.04777** | **-1.34%** |
+| 0.8 | 3.67990 | +0.10608 | +2.97% |
+
+The optimum is bracketed: performance improves through 0.4 and degrades
+strongly at 0.8, so the preregistered rule does not call for a 1.6 run.
+Tuned AR regularization therefore recovers—and in this single-seed paired
+comparison exceeds—the full-BD best loss. The improvement also comes at
+77.76% of full-BD realized compute because causal AR attention is cheaper,
+although optimizer steps and token exposures are identical.
+
+The four curriculum runs each took about 3.41 hours. Their accounted
+single-H100 BF16 MFU was 13.76--13.77%; AR and BD phase MFUs were about
+14.3% and 13.6%, respectively. All four completed without OOM, non-finite
+loss, or W&B upload failure. The paired endpoint evaluation uses the same
+validation batches and stratified masks for every model.
+
+![Limited-data efficiency result](figures_data_efficiency/data_efficiency_25m_50m.png)
+
 ## What we can and cannot conclude
 
 ### Supported by the current experiments
@@ -634,6 +673,10 @@ run is
   loss by less than 0.2%.
 - The one-shot \(10^{19}\), 176M run reached NELBO 3.00472, 2.04% below the
   preferred rolling-four loss forecast, at 18.14% accounted four-H100 MFU.
+- With 25M unique tokens and a fixed 120-epoch horizon, increasing
+  curriculum AR weight decay from 0.1 to 0.4 improves validation NELBO from
+  3.59529 to 3.52605. This is 1.34% better than the selected full-BD
+  endpoint; weight decay 0.8 closes the bracket on the high side.
 
 ### Not yet established
 
@@ -643,7 +686,9 @@ run is
   one budget.
 - Whether preserving or transforming optimizer state eliminates the
   transition cost.
-- Whether weight decay should differ between AR and BD on ClimbMix.
+- Whether the limited-data AR-weight-decay result survives repeated seeds,
+  other model/data sizes, or jointly tuning the full-BD baseline's weight
+  decay.
 - Whether 176M is the \(10^{19}\) compute-optimal model size; one point does
   not localize an IsoFLOP minimum.
 - How much of the favorable \(10^{19}\) loss residual comes from scale versus
@@ -651,16 +696,13 @@ run is
 
 ## Recommended next experiments
 
-1. On a fixed 25M-token prefix and 50.25M-parameter model, select the best
-   full-BD horizon from five-epoch checkpoints with proportional `T/5`
-   decay branches and endpoint-only validation.
-2. At exactly that selected total horizon, train \(p_{\mathrm{AR}}=0.4\)
-   curricula while doubling AR weight decay from 0.1 until the loss optimum
-   is bracketed.
-3. Before interpreting sub-1% scaling-frontier differences causally, repeat the
+1. Before interpreting sub-1% scaling-frontier differences causally, repeat the
    \(3\cdot10^{17}\) compute-optimal \(p_{\mathrm{AR}}=0.15\) and 0.4 points
    with multiple seeds.
-4. Test optimizer-state transition mechanics only if the seed repeats show a
+2. Repeat the limited-data full-BD and AR-weight-decay comparison across
+   seeds, then test whether its 0.4 optimum transfers to another unique-token
+   budget or model size.
+3. Test optimizer-state transition mechanics only if the seed repeats show a
    stable curriculum gap.
 
 ## Primary artifacts
@@ -687,3 +729,7 @@ run is
   `results_matched_p_ar_fraction_sensitivity/summary.json`
 - Cross-objective and LR comparisons: `results_followup_comparison/`
 - Limited-data experiment plan: `results_data_efficiency/plan.json`
+- Limited-data endpoint tables and selected comparison:
+  `results_data_efficiency/full_bd_endpoints.csv`,
+  `results_data_efficiency/curriculum_weight_decay.csv`, and
+  `results_data_efficiency/summary.json`
